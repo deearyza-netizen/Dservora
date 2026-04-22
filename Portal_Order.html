@@ -1,0 +1,2969 @@
+NOT FOUND: 'rgba(232,64,10,0.20)'
+NOT FOUND: 'rgba(232,64,10,0.18)'
+NOT FOUND: 'rgba(232,64,10,.4)'
+NOT FOUND: 'background:linear-gradient(135deg,#FF3D00,#FF7A3D);border-ra'
+Applied 35/39 patches
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Room Service — Guest Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<!-- ═══════════════════════════════════════════════════════
+     FIREBASE SDK v12 (modular CDN) — dservora project
+     ═══════════════════════════════════════════════════════ -->
+<script type="module">
+  import { initializeApp }
+    from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
+  import {
+    getFirestore, collection, getDocs, addDoc,
+    onSnapshot, query, orderBy, serverTimestamp,
+    doc, setDoc, updateDoc, deleteDoc, getDoc,
+    where, limit
+  } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
+  import {
+    getAuth, signInAnonymously, onAuthStateChanged
+  } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
+
+  // ── Firebase project config ────────────────────────────
+  const firebaseConfig = {
+    apiKey:            "AIzaSyDDONfL7IDBcdA_yHiOJKboMKrV1orKq00",
+    authDomain:        "dservora.firebaseapp.com",
+    projectId:         "dservora",
+    storageBucket:     "dservora.firebasestorage.app",
+    messagingSenderId: "247710745842",
+    appId:             "1:247710745842:web:67517797f717860d87bc6b"
+  };
+
+  // ── Init app, auth, firestore ──────────────────────────
+  const _app  = initializeApp(firebaseConfig);
+  const _auth = getAuth(_app);
+  const _db   = getFirestore(_app);
+
+  // Expose on window so portal scripts (_gpInitFirestore, pcfSubmit, etc.)
+  // can access them via window._fbDb and window._FB
+  window._fbDb = _db;
+  window._FB   = {
+    collection, getDocs, addDoc, onSnapshot, query, orderBy,
+    serverTimestamp, doc, setDoc, updateDoc, deleteDoc,
+    getDoc, where, limit
+  };
+
+  // FIX 5: Promise gate — guarantees _doOpen fires only after auth + listeners ready
+  let _gpAuthResolve;
+  const _gpAuthReady = new Promise(resolve => { _gpAuthResolve = resolve; });
+  window._gpAuthReady = _gpAuthReady;
+
+  // Anonymous auth → once signed in, trigger Firestore listeners
+  onAuthStateChanged(_auth, async user => {
+    if (!user) {
+      try {
+        await signInAnonymously(_auth);
+      } catch (e) {
+        console.warn('[GP] Anonymous sign-in failed:', e);
+      }
+    } else {
+      if (typeof window._gpInitFirestore === 'function') {
+        window._gpInitFirestore();
+      }
+      if (_gpAuthResolve) _gpAuthResolve();   // ← signal auth + listeners are ready
+    }
+  });
+</script>
+<!-- ═══════════════════════════════════════════════════════ -->
+<style>
+  /* SYNC v2: DM Sans + DM Mono — aligned with Dashboard/Kitchen/Order_Taker */
+
+  :root {
+    --primary: #E8400A;
+    --primary-light: #FF6B35;
+    --primary-dark: #C03200;
+    --primary-bg: #FFF3EE;
+    --primary-glow: rgba(232,64,10,0.18);
+    --primary-dim: rgba(232,64,10,0.08);
+    --primary-border: rgba(232,64,10,0.20);
+    --secondary: #5C4A32;
+    --accent: #00A86B;
+    --accent-light: rgba(0,168,107,0.10);
+    --warning: #D97706;
+    --warning-light: rgba(217,119,6,0.10);
+    --danger: #DC2626;
+    --danger-light: rgba(220,38,38,0.09);
+    --info: #2563EB;
+    --info-light: rgba(37,99,235,0.10);
+    --purple: #7C3AED;
+    --purple-light: rgba(124,58,237,0.09);
+
+    --new-col: #E8400A;
+    --new-dim: rgba(232,64,10,0.08);
+    --kitchen-col: #2563EB;
+    --kitchen-dim: rgba(37,99,235,0.08);
+    --ready-col: #00A86B;
+    --ready-dim: rgba(0,168,107,0.08);
+
+    --bg: #F2F3F9;
+    --bg2: #E8EAF4;
+    --card: #FFFFFF;
+    --surface: #FFFFFF;
+    --surface2: #F6F7FC;
+    --surface3: #ECEEF6;
+    --text: #0F1124;
+    --text-primary: #0F1124;
+    --text2: #4A4D6A;
+    --text-secondary: #4A4D6A;
+    --text3: #9496AF;
+    --text-muted: #9496AF;
+    --border: #E2E5F0;
+    --border-hi: #CDD0E4;
+    --border-light: #E2E5F0;
+
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Outfit', system-ui, sans-serif;
+    --font-display: 'Outfit', system-ui, sans-serif;
+    --font-body:    'Outfit', system-ui, sans-serif;
+    --font-mono:    'JetBrains Mono', monospace;
+
+    --shadow-sm: 0 1px 4px rgba(15,17,36,.05), 0 1px 2px rgba(15,17,36,.04);
+    --shadow: 0 4px 24px rgba(15,17,36,.08), 0 1px 3px rgba(15,17,36,.05);
+    --shadow-lg: 0 8px 32px rgba(15,17,36,.10);
+    --shadow-card: 0 2px 12px rgba(15,17,36,.06), 0 1px 2px rgba(15,17,36,.03);
+    --shadow-float: 0 20px 60px rgba(15,17,36,.18), 0 4px 12px rgba(15,17,36,.08);
+
+    --radius: 18px;
+    --radius-sm: 12px;
+    --radius-xs: 8px;
+    --r: 18px; --r-sm: 12px; --r-xs: 8px;
+
+    --transition: all 0.16s cubic-bezier(.4,0,.2,1);
+    --spring: all 0.24s cubic-bezier(.34,1.56,.64,1);
+    --transition-spring: all 0.24s cubic-bezier(.34,1.56,.64,1);
+    --input-bg: #FFFFFF;
+
+    --gold-100: #FFF3EE;
+    --gold-200: #FFB89A;
+    --gold-300: #E8400A;
+    --gold-400: #C03200;
+    --gold-500: #8A2200;
+    --gold-glow: rgba(232,64,10,0.10);
+    --gold-border: rgba(232,64,10,0.15);
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text-primary);
+    overflow-x: hidden;
+    font-size: 14px;
+    overscroll-behavior-y: none;
+  }
+
+  /* ===== FULL-SCREEN PORTAL LAYOUT ===== */
+  #guestPortal {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 1;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ===== HEADER ===== */
+  .gp-header {
+    background: linear-gradient(135deg, #E8400A 0%, #FF6B35 100%);
+    padding: 18px 16px 14px;
+    color: white;
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .gp-header::before {
+    content: '';
+    position: absolute;
+    top: -30px; right: -20px;
+    width: 120px; height: 120px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+    pointer-events: none;
+  }
+  .gp-header::after {
+    content: '';
+    position: absolute;
+    bottom: -40px; right: 60px;
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.06);
+    pointer-events: none;
+  }
+  .gp-hotel-name {
+    font-size: 10px; font-weight: 800; opacity: 0.8;
+    letter-spacing: 1.5px; text-transform: uppercase;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .gp-title { font-size: 22px; font-weight: 900; margin-top: 1px; letter-spacing: -0.3px; }
+  .gp-room-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: rgba(255,255,255,0.22);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 20px;
+    padding: 4px 10px; font-size: 12px; font-weight: 800;
+    margin-top: 6px;
+  }
+
+  /* ===== STEP CONTENT ===== */
+  .gp-content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; scroll-behavior: smooth; }
+  .gp-step { display: none; animation: stepFadeIn 0.28s ease; }
+  .gp-step.active { display: block; }
+  @keyframes stepFadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+  /* ===== STEP 1: LOGIN ===== */
+  .gp-login-wrap {
+    min-height: calc(100vh - 130px);
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 28px 20px;
+  }
+  .gp-login-icon {
+    font-size: 60px; text-align: center; margin-bottom: 14px;
+    animation: iconBounce 0.5s cubic-bezier(0.34,1.56,0.64,1);
+  }
+  @keyframes iconBounce { from{transform:scale(0.5);opacity:0} to{transform:scale(1);opacity:1} }
+  .gp-login-title {
+    font-size: 23px; font-weight: 900; text-align: center;
+    color: var(--text-primary); margin-bottom: 6px; letter-spacing: -0.3px;
+  }
+  .gp-login-sub {
+    font-size: 13.5px; color: var(--text-secondary); text-align: center;
+    margin-bottom: 28px; line-height: 1.55;
+  }
+  .gp-room-display {
+    background: var(--card);
+    border: 2.5px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px; text-align: center;
+    font-size: 34px; font-weight: 900;
+    color: var(--text-muted); letter-spacing: 8px;
+    margin-bottom: 14px; min-height: 70px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s ease;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,.03);
+  }
+  .gp-room-display.filled {
+    border-color: var(--primary);
+    color: var(--primary);
+    box-shadow: 0 0 0 4px var(--primary-glow), inset 0 2px 4px rgba(0,0,0,.03);
+  }
+  .gp-room-display.error-shake { animation: shake 0.4s ease; border-color: var(--danger); }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)} 40%{transform:translateX(8px)} 60%{transform:translateX(-5px)} 80%{transform:translateX(5px)} }
+
+  .gp-numpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+  .gp-numpad-key {
+    background: var(--card);
+    border: 2px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px 10px;
+    font-size: 22px; font-weight: 900; text-align: center; cursor: pointer;
+    color: var(--text-primary);
+    transition: var(--transition-spring);
+    user-select: none;
+    box-shadow: 0 2px 6px rgba(0,0,0,.04);
+    position: relative; overflow: hidden;
+  }
+  .gp-numpad-key::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(circle at center, rgba(232,64,10,0.12) 0%, transparent 70%);
+    opacity: 0; transition: opacity 0.15s;
+    pointer-events: none;
+  }
+  .gp-numpad-key:active { transform: scale(0.93); border-color: var(--primary); color: var(--primary); }
+  .gp-numpad-key:active::after { opacity: 1; }
+  .gp-numpad-key.del {
+    font-size: 20px; color: var(--danger);
+    border-color: var(--danger-light); background: var(--danger-light);
+    box-shadow: none;
+  }
+
+  /* ===== STEP 2: MENU BROWSE ===== */
+  .gp-menu-header { padding: 14px 16px 0; }
+  .gp-cat-tabs { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 12px; }
+  .gp-cat-tabs::-webkit-scrollbar { display: none; }
+  .gp-cat-tab {
+    padding: 7px 15px; border-radius: 20px; font-size: 12.5px; font-weight: 700;
+    white-space: nowrap; border: 2px solid var(--border); background: var(--card);
+    color: var(--text-secondary); cursor: pointer; flex-shrink: 0; transition: var(--transition);
+    box-shadow: 0 1px 4px rgba(0,0,0,.04);
+  }
+  .gp-cat-tab.active {
+    background: var(--primary); border-color: var(--primary); color: white;
+    box-shadow: 0 4px 12px rgba(232,64,10,0.3);
+  }
+  .gp-menu-grid { padding: 0 14px 120px; display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+
+  .gp-menu-card {
+    background: var(--card);
+    border: 1.5px solid var(--border-light);
+    border-radius: var(--radius);
+    padding: 0; display: flex; align-items: stretch; gap: 0;
+    transition: var(--transition);
+    position: relative;
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+  .gp-menu-card:active { transform: scale(0.985); opacity: 0.95; }
+
+  .gp-menu-emoji {
+    font-size: 44px; width: 110px; min-height: 110px;
+    border-radius: 0; background: var(--primary-bg);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; position: relative; overflow: hidden;
+  }
+  .gp-menu-emoji img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  .gp-menu-info { flex: 1; min-width: 0; padding: 12px 10px 12px 12px; display: flex; flex-direction: column; justify-content: space-between; }
+  .gp-menu-name { font-weight: 800; font-size: 14px; margin-bottom: 2px; line-height: 1.3; }
+  .gp-menu-desc { font-size: 11px; color: var(--text-muted); line-height: 1.4; margin-bottom: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .gp-menu-cat { font-size: 10px; color: var(--text-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+  .gp-menu-price { font-weight: 900; color: var(--primary); font-size: 15px; }
+
+  .gp-menu-bottom { display: flex; align-items: center; justify-content: space-between; }
+  .gp-qty-ctrl { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .gp-qty-btn {
+    width: 32px; height: 32px; border-radius: 50%;
+    border: 2px solid var(--primary); background: none;
+    color: var(--primary); font-size: 18px; font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: var(--transition-spring);
+  }
+  .gp-qty-btn:active { background: var(--primary); color: white; transform: scale(0.85); }
+  .gp-qty-btn.has-items { background: var(--primary); color: white; }
+  .gp-qty-num { font-size: 16px; font-weight: 900; color: var(--text-primary); min-width: 22px; text-align: center; }
+
+  /* Popular badge */
+  .gp-popular-badge {
+    position: absolute; top: 8px; left: 8px;
+    background: var(--primary); color: white;
+    font-size: 9px; font-weight: 800; padding: 2px 7px;
+    border-radius: 20px; letter-spacing: 0.3px; text-transform: uppercase;
+    box-shadow: 0 2px 8px rgba(232,64,10,0.4);
+    z-index: 2;
+  }
+  .gp-spicy-badge {
+    display: inline-flex; align-items: center; gap: 2px;
+    background: #FEE2E2; color: var(--danger);
+    font-size: 9px; font-weight: 800; padding: 2px 6px; border-radius: 20px;
+  }
+
+  /* ===== FLOATING CART FAB ===== */
+  .gp-cart-fab {
+    position: fixed; bottom: 20px; left: 14px; right: 14px;
+    background: linear-gradient(135deg, var(--primary) 0%, #FF6B35 100%);
+    color: white; border-radius: var(--radius);
+    padding: 13px 16px; display: flex; justify-content: space-between; align-items: center;
+    box-shadow: 0 8px 28px rgba(232,64,10,0.40), 0 2px 8px rgba(232,64,10,0.2);
+    cursor: pointer;
+    transform: translateY(120px);
+    transition: transform 0.38s cubic-bezier(0.34,1.56,0.64,1);
+    z-index: 50;
+  }
+  .gp-cart-fab.visible { transform: translateY(0); }
+  .gp-cart-count {
+    background: rgba(255,255,255,0.22);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 20px; padding: 5px 14px;
+    font-size: 13px; font-weight: 800;
+  }
+  .gp-cart-fab-pulse {
+    position: absolute; top: -4px; right: -4px;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #00E5A3;
+    box-shadow: 0 0 0 0 rgba(0,229,163,0.4);
+    animation: cartPulse 2s ease-in-out infinite;
+    display: none;
+  }
+  .gp-cart-fab.visible .gp-cart-fab-pulse { display: block; }
+  @keyframes cartPulse { 0%,100%{box-shadow:0 0 0 0 rgba(0,229,163,0.4)} 50%{box-shadow:0 0 0 8px rgba(0,229,163,0)} }
+
+  /* ===== CART / REVIEW / PAYMENT ===== */
+  .gp-cart-wrap { padding: 18px 16px 24px; }
+  .gp-cart-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 0; border-bottom: 1px solid var(--border-light);
+    animation: stepFadeIn 0.25s ease;
+  }
+  .gp-cart-item:last-child { border-bottom: none; }
+  .gp-cart-item-emoji {
+    font-size: 26px; width: 46px; height: 46px;
+    background: var(--primary-bg); border-radius: var(--radius-sm);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; overflow: hidden;
+  }
+  .gp-cart-item-emoji img { width: 100%; height: 100%; object-fit: cover; border-radius: var(--radius-sm); }
+  .gp-cart-item-info { flex: 1; }
+  .gp-cart-item-name { font-weight: 800; font-size: 14px; }
+  .gp-cart-item-price { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .gp-cart-item-total { font-weight: 900; color: var(--primary); font-size: 14px; }
+
+  /* ===== STICKY BOTTOM ===== */
+  .gp-sticky-bottom {
+    position: sticky; bottom: 0; background: var(--card);
+    padding: 12px 16px 26px;
+    box-shadow: 0 -4px 20px rgba(0,0,0,.07); margin-top: -1px;
+  }
+  .dep-insufficient {
+    background: var(--danger-light); border: 1.5px solid var(--danger);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px; margin-bottom: 10px;
+    font-size: 12px; color: var(--danger); font-weight: 600; display: none;
+  }
+
+  /* ===== PAYMENT CARDS ===== */
+  .gp-pay-card {
+    background: var(--card); border: 2px solid var(--border); border-radius: var(--radius);
+    padding: 16px 12px; text-align: center; cursor: pointer; transition: var(--transition);
+    box-shadow: var(--shadow-sm);
+  }
+  .gp-pay-card:active { transform: scale(0.95); }
+  .gp-pay-card.active {
+    background: var(--primary-bg); border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-glow);
+  }
+  .gp-pay-icon { font-size: 28px; margin-bottom: 6px; }
+  .gp-pay-name { font-weight: 800; font-size: 13px; color: var(--text-primary); }
+  .gp-pay-sub { font-size: 10.5px; color: var(--text-muted); font-weight: 500; margin-top: 2px; }
+  .gp-pay-card.active .gp-pay-name { color: var(--primary); }
+  .gp-pay-card.active .gp-pay-sub { color: var(--primary-dark); }
+
+  /* ===== SUCCESS SCREEN ===== */
+  .gp-success-wrap { padding: 28px 18px 120px; text-align: center; }
+  .gp-success-icon { font-size: 80px; margin-bottom: 10px; display: inline-block; animation: successBounce .6s cubic-bezier(0.34,1.56,0.64,1); }
+  @keyframes successBounce { 0%{transform:scale(0);opacity:0} 60%{transform:scale(1.2)} 100%{transform:scale(1);opacity:1} }
+  .gp-success-title { font-size: 26px; font-weight: 900; margin-bottom: 6px; letter-spacing: -0.3px; }
+  .gp-success-sub { font-size: 14px; color: var(--text-secondary); margin-bottom: 22px; line-height: 1.65; }
+  .gp-order-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+    margin-bottom: 14px; text-align: left;
+    box-shadow: var(--shadow-sm);
+  }
+  .gp-prog-step { display: flex; gap: 12px; align-items: flex-start; }
+  .gp-prog-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; margin-top: 2px; }
+
+  /* ===== PROGRESS STEPS BAR ===== */
+  #gpStepBar {
+    background: white; padding: 10px 14px;
+    display: flex; gap: 3px; align-items: center;
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+    box-shadow: 0 1px 4px rgba(0,0,0,.04);
+  }
+
+  /* ===== STOCK BADGES ===== */
+  .gp-stock-badge { font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 8px; margin-top: 3px; display: inline-block; }
+  .gp-stock-badge.warn { background: var(--warning-light); color: #B45309; }
+  .gp-stock-badge.low  { background: var(--danger-light);  color: var(--danger); }
+
+  /* ===== FORM ===== */
+  .form-group { margin-bottom: 16px; }
+  .form-label { display: block; font-size: 11.5px; font-weight: 700; color: var(--text-secondary); margin-bottom: 6px; letter-spacing: 0.2px; }
+  .form-control {
+    width: 100%; padding: 13px 14px;
+    border: 2px solid var(--border); border-radius: var(--radius-sm);
+    font-size: 14.5px; font-family: inherit;
+    background: var(--card); outline: none;
+    transition: var(--transition); color: var(--text-primary);
+    box-shadow: inset 0 2px 4px rgba(0,0,0,.03);
+  }
+  .form-control:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 4px var(--primary-glow), inset 0 2px 4px rgba(0,0,0,.02);
+  }
+  .form-control::placeholder { color: var(--text-muted); }
+
+  /* ===== BUTTONS ===== */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    padding: 11px 18px; border-radius: var(--radius-sm);
+    font-size: 13.5px; font-weight: 800;
+    border: none; cursor: pointer; transition: var(--transition);
+    letter-spacing: 0.1px;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--primary) 0%, #FF6B35 100%);
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(232,64,10,0.3);
+  }
+  .btn-primary:active { transform: scale(0.97); box-shadow: 0 2px 8px rgba(232,64,10,0.2); }
+  .btn-secondary {
+    background: var(--bg); color: var(--text-primary);
+    border: 1.5px solid var(--border); box-shadow: var(--shadow-sm);
+  }
+  .btn-secondary:active { transform: scale(0.97); }
+  .btn-block { width: 100%; }
+
+  /* ===== TOAST ===== */
+  .toast-container { position: fixed; bottom: 80px; left: 14px; right: 14px; z-index: 300; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+  .toast {
+    background: #1E2033; color: #fff;
+    padding: 13px 16px; border-radius: var(--radius-sm);
+    font-size: 13px; font-weight: 600;
+    display: flex; gap: 10px; align-items: center;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
+    animation: toastSlide 0.32s cubic-bezier(0.34,1.56,0.64,1);
+    pointer-events: auto;
+  }
+  .toast.success { border-left: 4px solid var(--accent); }
+  .toast.info    { border-left: 4px solid var(--info); }
+  .toast.error   { border-left: 4px solid var(--danger); }
+  @keyframes toastSlide { from { transform: translateY(24px) scale(0.94); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* ===== ORDER HISTORY ===== */
+  #gpOrderHistory {
+    display: none; position: fixed; inset: 0; z-index: 9500;
+    background: #F4F6FA; flex-direction: column; overflow: hidden;
+    animation: historySlide 0.3s ease;
+  }
+  @keyframes historySlide { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  #gpOrderHistory.open { display: flex; }
+  .goh-header {
+    background: linear-gradient(135deg, var(--primary), var(--primary-light));
+    padding: 20px 16px 16px; color: #fff; flex-shrink: 0;
+  }
+  .goh-header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .goh-title { font-size: 18px; font-weight: 900; }
+  .goh-close { background: rgba(255,255,255,.25); border: none; color: #fff; width: 36px; height: 36px; border-radius: 50%; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .goh-room { font-size: 12px; opacity: .85; margin-top: 2px; }
+  .goh-body { flex: 1; overflow-y: auto; padding: 16px; }
+  .goh-order-card { background: #fff; border-radius: 16px; border: 1.5px solid #E8EBF0; box-shadow: 0 2px 10px rgba(0,0,0,.06); margin-bottom: 14px; overflow: hidden; }
+  .goh-card-header { padding: 12px 14px; border-bottom: 1px solid #F1F5F9; display: flex; justify-content: space-between; align-items: center; }
+  .goh-order-num { font-size: 14px; font-weight: 800; color: var(--text-primary); }
+  .goh-order-time { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+  .goh-status-badge { font-size: 10px; font-weight: 800; padding: 4px 10px; border-radius: 20px; }
+  .goh-status-new     { background: #FFF5F0; color: var(--primary); }
+  .goh-status-kitchen { background: #EFF6FF; color: var(--info); }
+  .goh-status-ready   { background: #E6FAF5; color: var(--accent); }
+  .goh-status-done    { background: #F0FDF4; color: #16A34A; }
+  .goh-status-cancelled { background: #FEE2E2; color: var(--danger); }
+  .goh-progress-bar { display: flex; padding: 12px 14px; gap: 0; align-items: center; background: #FAFBFC; border-bottom: 1px solid #F1F5F9; }
+  .goh-prog-step { display: flex; flex-direction: column; align-items: center; flex: 1; position: relative; }
+  .goh-prog-dot  { width: 20px; height: 20px; border-radius: 50%; background: #E2E8F0; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; color: #fff; z-index: 1; transition: all .3s; }
+  .goh-prog-dot.done   { background: var(--accent); }
+  .goh-prog-dot.active { background: var(--primary); box-shadow: 0 0 0 3px rgba(232,64,10,.2); }
+  .goh-prog-dot.cancelled { background: var(--danger); }
+  .goh-prog-line { position: absolute; top: 10px; left: 50%; width: 100%; height: 2px; background: #E2E8F0; z-index: 0; }
+  .goh-prog-line.done { background: var(--accent); }
+  .goh-prog-label { font-size: 8px; color: var(--text-muted); font-weight: 600; margin-top: 4px; text-align: center; line-height: 1.2; }
+  .goh-prog-label.active { color: var(--primary); font-weight: 800; }
+  .goh-prog-label.done   { color: var(--accent); }
+  .goh-items { padding: 10px 14px; }
+  .goh-item-row { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; color: var(--text-secondary); }
+  .goh-item-name { font-weight: 600; }
+  .goh-item-price { font-weight: 700; }
+  .goh-total-row { display: flex; justify-content: space-between; font-size: 13px; font-weight: 800; color: var(--primary); padding: 10px 14px; border-top: 1px dashed #E2E8F0; }
+  .goh-pay-chip { background: var(--bg); border-radius: 8px; padding: 4px 10px; font-size: 10px; font-weight: 700; color: var(--text-muted); }
+  .goh-empty { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+  .goh-empty-icon { font-size: 48px; margin-bottom: 12px; }
+  .goh-live-badge { display: inline-flex; align-items: center; gap: 4px; background: var(--primary-bg); color: var(--primary); font-size: 9px; font-weight: 800; padding: 3px 8px; border-radius: 20px; }
+  .goh-live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); animation: livePulse 1.2s ease-in-out infinite; }
+  @keyframes livePulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.8)} }
+
+  /* Post-checkout feedback */
+  #postCheckoutFeedback { display: none; position: fixed; inset: 0; z-index: 9800; background: rgba(0,0,0,.6); align-items: flex-end; }
+  #postCheckoutFeedback.open { display: flex; }
+  .pcf-sheet { background: #fff; width: 100%; border-radius: 24px 24px 0 0; padding: 0 0 32px; animation: slideUp .35s cubic-bezier(0.34,1.56,0.64,1); max-height: 88vh; overflow-y: auto; }
+  .pcf-header { background: linear-gradient(135deg, #1A1A2E, #2d2d50); padding: 20px 20px 18px; border-radius: 24px 24px 0 0; color: #fff; text-align: center; }
+  .pcf-drag { width: 36px; height: 4px; background: rgba(255,255,255,.3); border-radius: 2px; margin: 0 auto 14px; }
+  .pcf-icon { font-size: 36px; margin-bottom: 8px; }
+  .pcf-title { font-size: 18px; font-weight: 900; margin-bottom: 4px; }
+  .pcf-sub { font-size: 12px; opacity: .75; }
+  .pcf-body { padding: 20px; }
+  .pcf-order-summary { background: #F8F9FC; border-radius: 14px; padding: 14px; margin-bottom: 18px; }
+  .pcf-order-label { font-size: 10px; font-weight: 800; color: var(--text-muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 8px; }
+  .pcf-order-items { font-size: 12px; color: var(--text-secondary); line-height: 1.8; }
+  .pcf-order-total { font-size: 15px; font-weight: 900; color: var(--primary); margin-top: 8px; padding-top: 8px; border-top: 1px dashed #E2E8F0; }
+  .pcf-cat-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #F8F9FC; border-radius: 12px; margin-bottom: 8px; }
+  .pcf-cat-left { display: flex; align-items: center; gap: 10px; }
+  .pcf-cat-emoji { font-size: 20px; }
+  .pcf-cat-name { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+  .pcf-stars { display: flex; gap: 4px; }
+  .pcf-star { font-size: 26px; cursor: pointer; filter: grayscale(1); opacity: .4; transition: all .15s; user-select: none; }
+  .pcf-star.lit { filter: none; opacity: 1; }
+  .pcf-star.lit:last-child { transform: scale(1.1); }
+  .pcf-textarea { width: 100%; border: 1.5px solid #E2E8F0; border-radius: 12px; padding: 12px; font-family: inherit; font-size: 13px; resize: none; outline: none; background: #F8F9FC; margin-bottom: 16px; }
+  .pcf-textarea:focus { border-color: var(--primary); background: #fff; }
+  .pcf-submit { background: linear-gradient(135deg,var(--primary),var(--primary-light)); color: #fff; border: none; width: 100%; padding: 16px; border-radius: 14px; font-size: 15px; font-weight: 900; cursor: pointer; margin-bottom: 10px; }
+  .pcf-skip { background: none; border: none; width: 100%; padding: 10px; color: var(--text-muted); font-size: 12px; font-weight: 600; cursor: pointer; text-decoration: underline; }
+  .pcf-thank-wrap { text-align: center; padding: 48px 20px; }
+  .pcf-thank-icon { font-size: 64px; margin-bottom: 12px; }
+  .pcf-thank-stars { font-size: 32px; margin: 8px 0 12px; }
+  .pcf-thank-title { font-size: 20px; font-weight: 900; color: var(--text-primary); margin-bottom: 6px; }
+  .pcf-thank-sub { font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+  /* Delayed feedback popup */
+  #gpFeedbackPopup { display:none; position:fixed; bottom:0; left:0; right:0; z-index:9999; padding:0 12px 16px; pointer-events:none; }
+</style>
+</head>
+<body>
+
+<!-- ======================================================= -->
+<!--              GUEST ORDER PORTAL (Standalone)            -->
+<!-- ======================================================= -->
+<div id="guestPortal">
+
+  <!-- PORTAL HEADER -->
+  <div class="gp-header">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+      <div>
+        <div class="gp-hotel-name" id="gpHotelName">🏨 Dafam Enkadeli Hotel</div>
+        <div class="gp-title">Room Service</div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          <div class="gp-room-badge" id="gpRoomBadge" style="display:none;">
+            🛏️ <span id="gpRoomBadgeText">Kamar —</span>
+          </div>
+          <span id="gpRoomStatusBadge" style="display:none;font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;"></span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-start;flex-shrink:0;margin-top:4px;">
+        <button id="gpLangBtn" onclick="gpCycleLang()" style="background:rgba(255,255,255,0.25);border:none;color:white;font-size:11px;font-weight:800;padding:6px 10px;border-radius:20px;cursor:pointer;letter-spacing:.5px;">🌐 ID</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROGRESS STEPS INDICATOR -->
+  <div id="gpStepBar">
+    <div id="sd1" style="display:flex;align-items:center;gap:3px;font-size:10px;font-weight:800;color:var(--primary);white-space:nowrap;">
+      <span style="width:18px;height:18px;border-radius:50%;background:var(--primary);color:white;font-size:9px;font-weight:900;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;">1</span>
+      <span>Kamar</span>
+    </div>
+    <div style="flex:1;height:2px;background:var(--border);border-radius:2px;margin:0 4px;"><div id="sp1" style="height:100%;width:0%;background:var(--primary);border-radius:2px;transition:width 0.4s ease;"></div></div>
+    <div id="sd2" style="display:flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:var(--text-muted);white-space:nowrap;">
+      <span style="width:18px;height:18px;border-radius:50%;background:var(--border);color:var(--text-muted);font-size:9px;font-weight:900;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;" id="sd2dot">2</span>
+      <span>Data</span>
+    </div>
+    <div style="flex:1;height:2px;background:var(--border);border-radius:2px;margin:0 4px;"><div id="sp2" style="height:100%;width:0%;background:var(--primary);border-radius:2px;transition:width 0.4s ease;"></div></div>
+    <div id="sd3" style="display:flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:var(--text-muted);white-space:nowrap;">
+      <span style="width:18px;height:18px;border-radius:50%;background:var(--border);color:var(--text-muted);font-size:9px;font-weight:900;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;" id="sd3dot">3</span>
+      <span>Menu</span>
+    </div>
+    <div style="flex:1;height:2px;background:var(--border);border-radius:2px;margin:0 4px;"><div id="sp3" style="height:100%;width:0%;background:var(--primary);border-radius:2px;transition:width 0.4s ease;"></div></div>
+    <div id="sd4" style="display:flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:var(--text-muted);white-space:nowrap;">
+      <span style="width:18px;height:18px;border-radius:50%;background:var(--border);color:var(--text-muted);font-size:9px;font-weight:900;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;" id="sd4dot">4</span>
+      <span>Pesanan</span>
+    </div>
+    <div style="flex:1;height:2px;background:var(--border);border-radius:2px;margin:0 4px;"><div id="sp4" style="height:100%;width:0%;background:var(--primary);border-radius:2px;transition:width 0.4s ease;"></div></div>
+    <div id="sd5" style="display:flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:var(--text-muted);white-space:nowrap;">
+      <span style="width:18px;height:18px;border-radius:50%;background:var(--border);color:var(--text-muted);font-size:9px;font-weight:900;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;" id="sd5dot">5</span>
+      <span>Bayar</span>
+    </div>
+  </div>
+
+  <div class="gp-content">
+
+    <!-- STEP 1: MASUKKAN NOMOR KAMAR -->
+    <div class="gp-step active" id="gp-step-1">
+      <div class="gp-login-wrap">
+        <div class="gp-login-icon">🔑</div>
+        <div class="gp-login-title">Masukkan Nomor Kamar</div>
+        <div class="gp-login-sub">Ketuk nomor kamar Anda untuk mulai memesan. Pesanan akan langsung dikirim ke dapur.</div>
+        <div class="gp-room-display" id="gpRoomDisplay">—</div>
+        <div style="background:linear-gradient(135deg,var(--primary-bg),#FFF8F5); border:1.5px solid #FFD4BC; border-radius:var(--radius-sm); padding:12px 14px; margin-bottom:16px; font-size:12px; color:var(--text-secondary); display:flex; gap:10px; align-items:flex-start;">
+          <span style="font-size:18px; flex-shrink:0;">💡</span>
+          <span style="line-height:1.55;">Nomor kamar ada di kunci pintu atau kartu selamat datang Anda. Kamar tersedia: Lantai 3 (301–320), Lantai 4 (401–420), Lantai 5 (501–520).</span>
+        </div>
+        <div class="gp-numpad">
+          <div class="gp-numpad-key" onclick="gpNumPress('1')">1</div>
+          <div class="gp-numpad-key" onclick="gpNumPress('2')">2</div>
+          <div class="gp-numpad-key" onclick="gpNumPress('3')">3</div>
+          <div class="gp-numpad-key" onclick="gpNumPress('4')">4</div>
+          <div class="gp-numpad-key" onclick="gpNumPress('5')">5</div>
+          <div class="gp-numpad-key" onclick="gpNumPress('6')">6</div>
+          <div class="gp-numpad-key" onclick="gpNumPress('7')">7</div>
+          <div class="gp-numpad-key" onclick="gpNumPress('8')">8</div>
+          <div class="gp-numpad-key" onclick="gpNumPress('9')">9</div>
+          <div class="gp-numpad-key del" onclick="gpNumDel()">⌫</div>
+          <div class="gp-numpad-key" onclick="gpNumPress('0')">0</div>
+          <div class="gp-numpad-key" onclick="gpNumPressDouble('00')">00</div>
+        </div>
+        <button class="btn btn-primary btn-block" style="margin-top:16px; padding:16px; font-size:15px;" onclick="gpConfirmRoom()">
+          Lanjut ke Menu →
+        </button>
+        <div id="gpRoomPreviewStatus" style="display:none;margin-top:10px;padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700;text-align:center;transition:all 0.2s;"></div>
+        <div style="text-align:center; margin-top:16px; font-size:12px; color:var(--text-muted);">
+          Butuh bantuan? Hubungi <strong style="color:var(--primary);">Ext. 0</strong> dari telepon kamar
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 2: DATA TAMU -->
+    <div class="gp-step" id="gp-step-2">
+      <div class="gp-login-wrap">
+        <div class="gp-login-icon">👤</div>
+        <div class="gp-login-title">Data Tamu</div>
+        <div class="gp-login-sub">Lengkapi informasi agar kami dapat melayani Anda dengan lebih baik.</div>
+        <!-- Room chip -->
+        <div style="background:linear-gradient(135deg,var(--primary-bg),#FFF0E8);border:1.5px solid #FFD4BC;border-radius:var(--radius-sm);padding:12px 14px;display:flex;align-items:center;gap:12px;margin-bottom:22px;">
+          <div style="width:40px;height:40px;background:var(--primary);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;box-shadow:0 3px 10px rgba(232,64,10,0.25);">🛏️</div>
+          <div style="flex:1;">
+            <div style="font-size:10px;color:var(--text-muted);font-weight:800;letter-spacing:.8px;text-transform:uppercase;">NOMOR KAMAR</div>
+            <div style="font-size:20px;font-weight:900;color:var(--primary);margin-top:1px;" id="gpGuestStepRoomLabel">—</div>
+          </div>
+          <button onclick="gpGoToStep(1)" style="background:white;border:1.5px solid var(--border);color:var(--text-secondary);font-size:11px;font-weight:700;padding:6px 12px;border-radius:20px;cursor:pointer;">Ubah</button>
+        </div>
+        <div class="form-group">
+          <label class="form-label">👤 Nama Lengkap <span style="color:var(--danger);">*</span></label>
+          <input type="text" class="form-control" id="gpInputName" placeholder="mis. Budi Santoso" autocomplete="name" style="font-size:15px;">
+        </div>
+        <div class="form-group">
+          <label class="form-label">📧 Email <span style="color:var(--text-muted);font-weight:500;">(opsional)</span></label>
+          <input type="email" class="form-control" id="gpInputEmail" placeholder="mis. budi@email.com" autocomplete="email" inputmode="email" style="font-size:15px;">
+        </div>
+        <div class="form-group">
+          <label class="form-label">📱 Nomor Telepon <span style="color:var(--text-muted);font-weight:500;">(opsional)</span></label>
+          <input type="tel" class="form-control" id="gpInputPhone" placeholder="mis. 08123456789" autocomplete="tel" inputmode="tel" style="font-size:15px;">
+        </div>
+        <div style="height:14px;"></div>
+        <button class="btn btn-primary btn-block" style="padding:16px; font-size:15px;" onclick="gpConfirmGuestData()">
+          Lanjut ke Menu →
+        </button>
+        <div style="height:24px;"></div>
+      </div>
+    </div>
+
+    <!-- STEP 3: PILIH MENU -->
+    <div class="gp-step" id="gp-step-3">
+      <div class="gp-menu-header">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <div>
+            <div style="font-size:16px; font-weight:800;">Pilih Menu</div>
+            <div style="font-size:12px; color:var(--text-muted);" id="gpMenuSubtitle">Semua harga sudah termasuk pajak &amp; servis</div>
+          </div>
+          <button onclick="gpGoToStep(2)" id="gpMenuBackBtn" style="background:var(--bg); border:1.5px solid var(--border); color:var(--text-secondary); font-size:11.5px; font-weight:700; padding:6px 12px; border-radius:20px; cursor:pointer; flex-shrink:0;">← Data Tamu</button>
+        </div>
+        <div class="gp-cat-tabs" id="gpCatTabs">
+          <div class="gp-cat-tab active" onclick="gpFilterCat('Semua', this)">🍽 Semua</div>
+          <div class="gp-cat-tab" onclick="gpFilterCat('Makanan', this)">🍳 Makanan</div>
+          <div class="gp-cat-tab" onclick="gpFilterCat('Minuman', this)">🧋 Minuman</div>
+          <div class="gp-cat-tab" onclick="gpFilterCat('Snack', this)">🍌 Snack</div>
+          <div class="gp-cat-tab" onclick="gpFilterCat('Minibar', this)">🏨 Minibar</div>
+        </div>
+      </div>
+      <!-- PROMO BANNER -->
+      <div id="gpPromoBanner" style="margin:0 14px 10px;border-radius:var(--radius-sm);overflow:hidden;display:none;box-shadow:0 4px 14px rgba(232,64,10,0.2);">
+        <div style="background:linear-gradient(135deg,#E8400A,#FF6B35);color:white;padding:12px 14px;display:flex;align-items:center;gap:12px;">
+          <div style="width:40px;height:40px;background:rgba(255,255,255,0.18);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;">🎉</div>
+          <div style="flex:1;">
+            <div style="font-weight:900;font-size:13px;" id="gpPromoTitle">Promo Hari Ini!</div>
+            <div style="font-size:11.5px;opacity:0.9;margin-top:1px;" id="gpPromoDesc">Beli 2 Es Kopi Susu gratis 1 Pisang Goreng</div>
+          </div>
+          <button onclick="document.getElementById('gpPromoBanner').style.display='none'" style="background:rgba(255,255,255,0.2);border:none;color:white;font-size:14px;width:26px;height:26px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">✕</button>
+        </div>
+      </div>
+      <!-- REPEAT LAST ORDER -->
+      <div id="gpRecommendBox" style="display:none;margin:0 14px 10px;background:var(--info-light);border:1.5px solid #BFDBFE;border-radius:var(--radius-sm);padding:12px 14px;align-items:center;gap:12px;box-shadow:0 2px 8px rgba(59,130,246,0.1);">
+        <div style="flex:1;">
+          <div style="font-weight:800;font-size:13px;color:var(--info);" id="gpRecommendTitle">🔄 Ulangi Pesanan Terakhir</div>
+          <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;" id="gpRecommendDesc"></div>
+        </div>
+        <button onclick="gpRepeatLastOrder()" style="background:var(--info);color:white;border:none;border-radius:10px;font-size:12px;font-weight:800;padding:8px 14px;cursor:pointer;white-space:nowrap;box-shadow:0 3px 8px rgba(59,130,246,0.3);">Ulangi</button>
+      </div>
+      <div class="gp-menu-grid" id="gpMenuGrid"></div>
+    </div>
+
+    <!-- STEP 4: RINGKASAN PESANAN -->
+    <div class="gp-step" id="gp-step-4">
+      <div class="gp-cart-wrap">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+          <div style="font-size:17px; font-weight:900; letter-spacing:-0.2px;">Ringkasan Pesanan</div>
+          <button onclick="gpGoToStep(3)" style="background:var(--bg); border:1.5px solid var(--border); color:var(--text-secondary); font-size:11.5px; font-weight:700; padding:6px 12px; border-radius:20px; cursor:pointer; display:flex; align-items:center; gap:4px;">← Tambah Item</button>
+        </div>
+        <!-- Room delivery banner -->
+        <div style="background:linear-gradient(135deg,var(--primary-bg),#FFF0E8); border:1.5px solid #FFD4BC; border-radius:var(--radius); padding:14px 16px; margin-bottom:16px; display:flex; gap:14px; align-items:center;">
+          <div style="width:44px;height:44px;background:var(--primary);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;box-shadow:0 4px 12px rgba(232,64,10,0.25);">🛏️</div>
+          <div>
+            <div style="font-weight:900; font-size:15px;" id="gc-room-label">Kamar —</div>
+            <div style="font-size:12px; color:var(--primary); font-weight:600; margin-top:1px;">Room Service · Diantar langsung ke kamar</div>
+          </div>
+        </div>
+        <!-- Cart items -->
+        <div id="gpCartItems"></div>
+        <!-- Kitchen note -->
+        <div class="form-group" style="margin-top:16px;">
+          <label class="form-label">📝 Catatan untuk Dapur <span style="color:var(--text-muted);font-weight:500;">(opsional)</span></label>
+          <input type="text" class="form-control" id="gpNote" placeholder="mis. tidak pedas, extra saus, alergi kacang...">
+        </div>
+        <!-- Guest summary -->
+        <div id="gpGuestInfoSummary" style="background:var(--bg);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;margin-bottom:4px;">
+          <div style="font-size:10px;font-weight:800;color:var(--text-muted);letter-spacing:.8px;text-transform:uppercase;margin-bottom:7px;">DATA TAMU</div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:36px;height:36px;border-radius:50%;background:var(--primary-bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">👤</div>
+            <div>
+              <div style="font-size:13px;font-weight:800;" id="gpSumName">—</div>
+              <div style="font-size:12px;color:var(--text-secondary);margin-top:1px;" id="gpSumContact"></div>
+            </div>
+          </div>
+        </div>
+        <!-- Price breakdown -->
+        <div style="background:var(--card); border-radius:var(--radius-sm); padding:16px; border:1.5px solid var(--border-light); margin-top:14px; box-shadow:var(--shadow-sm);">
+          <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:8px; color:var(--text-secondary);">
+            <span>Subtotal</span><span id="gc-sub" style="font-weight:700;">-</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:8px; color:var(--text-secondary);">
+            <span id="gc-service-label">Service (5%)</span><span id="gc-service" style="font-weight:700;">-</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:12px; color:var(--text-secondary);">
+            <span id="gc-tax-label">PPN (11%)</span><span id="gc-tax" style="font-weight:700;">-</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; font-weight:900; font-size:18px; color:var(--primary); padding-top:12px; border-top:2px dashed var(--border);">
+            <span>TOTAL</span><span id="gc-total">-</span>
+          </div>
+        </div>
+        <div style="height:90px;"></div>
+      </div>
+      <div class="gp-sticky-bottom">
+        <button class="btn btn-primary btn-block" style="padding:16px; font-size:15px; border-radius:var(--radius-sm);" onclick="gpGoToStep(5)">
+          💳 Pilih Pembayaran →
+        </button>
+      </div>
+    </div>
+
+    <!-- STEP 5: PILIH METODE PEMBAYARAN -->
+    <div class="gp-step" id="gp-step-5">
+      <div class="gp-cart-wrap">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <div style="font-size:17px; font-weight:900; letter-spacing:-0.2px;">Metode Pembayaran</div>
+          <button onclick="gpGoToStep(4)" style="background:var(--bg); border:1.5px solid var(--border); color:var(--text-secondary); font-size:11.5px; font-weight:700; padding:6px 12px; border-radius:20px; cursor:pointer;">← Kembali</button>
+        </div>
+        <div style="font-size:12.5px; color:var(--text-muted); margin-bottom:18px;">Pilih cara Anda membayar pesanan ini</div>
+        <div style="background:linear-gradient(135deg,var(--primary),#FF7A3D); border-radius:var(--radius); padding:16px 20px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center; color:white;">
+          <div>
+            <div style="font-size:11px; opacity:0.85; font-weight:600; letter-spacing:.5px;">TOTAL TAGIHAN</div>
+            <div style="font-size:24px; font-weight:800; margin-top:2px;" id="gp-pay-total">-</div>
+          </div>
+          <div style="font-size:36px;">🛏️</div>
+        </div>
+        <div style="font-size:12px; font-weight:700; color:var(--text-secondary); margin-bottom:12px; text-transform:uppercase; letter-spacing:.5px;">Pilih Metode</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:20px;" id="gpPayGrid"></div>
+        <div id="gpPayInfo" style="background:var(--accent-light); border:1px solid #C7F5E8; border-radius:var(--radius-sm); padding:12px 14px; display:flex; gap:10px; align-items:center; margin-bottom:16px;">
+          <span style="font-size:20px;" id="gpPayInfoIcon">💵</span>
+          <div>
+            <div style="font-weight:700; font-size:13px; color:var(--accent);" id="gpPayInfoTitle">Cash dipilih</div>
+            <div style="font-size:12px; color:var(--text-secondary);" id="gpPayInfoDesc">Siapkan uang tunai. Kembalian tersedia.</div>
+          </div>
+        </div>
+        <!-- E-WALLET PANEL -->
+        <div id="gpEwalletPanel" style="display:none;">
+          <div style="font-size:12px; font-weight:700; color:var(--text-secondary); margin-bottom:10px; text-transform:uppercase; letter-spacing:.5px;">Pilih Aplikasi</div>
+          <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:16px;" id="gpEwalletGrid">
+            <div class="gp-ewallet-opt active" data-ew="GoPay" onclick="gpSelectEwallet(this)" style="border:2px solid var(--primary); background:var(--primary-bg); border-radius:12px; padding:12px 6px; text-align:center; cursor:pointer; transition:var(--transition);">
+              <div class="ew-logo-wrap" style="display:flex;align-items:center;justify-content:center;height:36px;"></div>
+              <div style="font-size:11px; font-weight:800; margin-top:4px; color:var(--primary);">GoPay</div>
+            </div>
+            <div class="gp-ewallet-opt" data-ew="OVO" onclick="gpSelectEwallet(this)" style="border:2px solid var(--border); background:var(--card); border-radius:12px; padding:12px 6px; text-align:center; cursor:pointer; transition:var(--transition);">
+              <div class="ew-logo-wrap" style="display:flex;align-items:center;justify-content:center;height:36px;"></div>
+              <div style="font-size:11px; font-weight:800; margin-top:4px; color:var(--text-secondary);">OVO</div>
+            </div>
+            <div class="gp-ewallet-opt" data-ew="Dana" onclick="gpSelectEwallet(this)" style="border:2px solid var(--border); background:var(--card); border-radius:12px; padding:12px 6px; text-align:center; cursor:pointer; transition:var(--transition);">
+              <div class="ew-logo-wrap" style="display:flex;align-items:center;justify-content:center;height:36px;"></div>
+              <div style="font-size:11px; font-weight:800; margin-top:4px; color:var(--text-secondary);">Dana</div>
+            </div>
+            <div class="gp-ewallet-opt" data-ew="ShopeePay" onclick="gpSelectEwallet(this)" style="border:2px solid var(--border); background:var(--card); border-radius:12px; padding:12px 6px; text-align:center; cursor:pointer; transition:var(--transition);">
+              <div class="ew-logo-wrap" style="display:flex;align-items:center;justify-content:center;height:36px;"></div>
+              <div style="font-size:11px; font-weight:800; margin-top:4px; color:var(--text-secondary);">ShopeePay</div>
+            </div>
+          </div>
+          <div style="background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:14px;">
+            <div style="font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.5px; margin-bottom:10px;">Kirim ke Nomor Berikut</div>
+            <div style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+              <div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;flex-shrink:0;" id="gpEwIcon"></div>
+              <div style="flex:1;">
+                <div style="font-size:11px; color:var(--text-muted); font-weight:600;" id="gpEwApp">GoPay</div>
+                <div style="font-size:22px; font-weight:800; letter-spacing:2px; color:var(--text-primary);" id="gpEwNumber">0812-3456-7890</div>
+                <div style="font-size:12px; color:var(--text-secondary); margin-top:2px;" id="gpEwName">a/n Dafam Enkadeli Hotel</div>
+              </div>
+              <button onclick="gpCopyNumber()" style="background:var(--primary-bg); border:1px solid #FFD4BC; color:var(--primary); font-size:12px; font-weight:700; padding:8px 12px; border-radius:8px; cursor:pointer; white-space:nowrap;" id="gpCopyBtn">📋 Salin</button>
+            </div>
+            <div style="background:var(--primary-bg); border-radius:var(--radius-sm); padding:12px 14px; display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <div style="font-size:11px; color:var(--primary-dark); font-weight:600;">Nominal Transfer</div>
+                <div style="font-size:20px; font-weight:800; color:var(--primary); margin-top:2px;" id="gpEwTotal">-</div>
+              </div>
+              <button onclick="gpCopyAmount()" style="background:white; border:1px solid #FFD4BC; color:var(--primary); font-size:12px; font-weight:700; padding:8px 12px; border-radius:8px; cursor:pointer;">📋 Salin</button>
+            </div>
+          </div>
+
+          <div style="background:var(--warning-light); border:1px solid #FDE68A; border-radius:var(--radius-sm); padding:12px 14px; display:flex; gap:10px; margin-bottom:14px;">
+            <span style="font-size:20px;">⚠️</span>
+            <div style="font-size:12px; color:#92400E; line-height:1.5;">
+              Transfer sesuai nominal. Pesanan diproses setelah staf mengkonfirmasi pembayaran. Biasanya dalam <strong>2–5 menit</strong>.
+            </div>
+          </div>
+
+          <!-- BUKTI TRANSFER SECTION -->
+          <div id="gpProofSection" style="background:var(--card);border:2px dashed var(--border);border-radius:var(--radius);padding:16px;margin-bottom:12px;">
+            <div style="font-size:12px;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px;">📎 Bukti Pembayaran</div>
+
+            <!-- Upload area -->
+            <div id="gpProofUploadArea" onclick="document.getElementById('gpProofFileInput').click()" style="border:2px dashed #CBD5E1;border-radius:var(--radius-sm);padding:20px;text-align:center;cursor:pointer;transition:var(--transition);background:var(--bg);">
+              <div style="font-size:36px;margin-bottom:8px;">📷</div>
+              <div style="font-size:13px;font-weight:700;color:var(--text-secondary);">Tap untuk upload foto</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Screenshot bukti transfer Anda</div>
+            </div>
+            <input type="file" id="gpProofFileInput" accept="image/*" style="display:none;" onchange="gpHandleProofUpload(this)">
+
+            <!-- Preview area (hidden by default) -->
+            <div id="gpProofPreview" style="display:none;position:relative;margin-top:10px;">
+              <img id="gpProofImg" style="width:100%;border-radius:var(--radius-sm);max-height:200px;object-fit:contain;background:#F1F5F9;" src="" alt="Bukti Transfer">
+              <button onclick="gpRemoveProof()" style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,0.6);color:white;border:none;border-radius:50%;width:28px;height:28px;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
+              <div style="display:flex;align-items:center;gap:6px;margin-top:8px;padding:8px 10px;background:var(--accent-light);border-radius:8px;">
+                <span style="color:var(--accent);font-size:14px;">✅</span>
+                <span style="font-size:12px;font-weight:700;color:#065F46;" id="gpProofFileName">foto.jpg</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- CHECKLIST KONFIRMASI -->
+          <div id="gpTransferConfirmCheck" style="background:var(--primary-bg);border:1.5px solid #FFD4BC;border-radius:var(--radius-sm);padding:14px;margin-bottom:8px;">
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;">
+              <input type="checkbox" id="gpTransferChecked" onchange="gpCheckTransferReady()" style="width:18px;height:18px;margin-top:2px;accent-color:var(--primary);flex-shrink:0;">
+              <span style="font-size:13px;font-weight:600;color:var(--text-primary);line-height:1.5;">Saya telah melakukan transfer sesuai nominal <span id="gpCheckNominal" style="color:var(--primary);font-weight:800;"></span> dan screenshot bukti transfer sudah diupload di atas.</span>
+            </label>
+          </div>
+        </div>
+        <div style="height:90px;"></div>
+      </div>
+      <div class="gp-sticky-bottom">
+        <div class="dep-insufficient" id="gpDepInsufficient">
+          ⚠️ <span id="gpDepInsufficientMsg">Saldo deposit tidak cukup untuk pesanan ini.</span>
+        </div>
+        <button class="btn btn-primary btn-block" style="padding:16px; font-size:15px;" id="gpConfirmBtn" onclick="gpSubmitOrder()">
+          🛎️ Konfirmasi &amp; Kirim Pesanan
+        </button>
+        <div id="gpEwalletHint" style="display:none;text-align:center;font-size:11px;color:var(--text-muted);margin-top:8px;">⚠️ Upload bukti transfer dan centang konfirmasi untuk mengaktifkan tombol</div>
+      </div>
+    </div>
+
+    <!-- STEP 6: SUCCESS -->
+    <div class="gp-step" id="gp-step-6">
+      <div class="gp-success-wrap">
+        <!-- Confetti-style success header -->
+        <div style="background:linear-gradient(135deg,#E8400A,#FF6B35);border-radius:var(--radius);padding:28px 20px;margin-bottom:18px;text-align:center;position:relative;overflow:hidden;">
+          <div style="position:absolute;top:-20px;right:-20px;width:80px;height:80px;border-radius:50%;background:rgba(255,255,255,0.08);"></div>
+          <div style="position:absolute;bottom:-30px;left:10px;width:100px;height:100px;border-radius:50%;background:rgba(255,255,255,0.06);"></div>
+          <div class="gp-success-icon" style="font-size:56px;margin-bottom:8px;">🎉</div>
+          <div class="gp-success-title" style="color:white;font-size:22px;">Pesanan Dikirim!</div>
+          <div style="font-size:13px;color:rgba(255,255,255,0.85);margin-top:4px;line-height:1.5;">Dapur sedang menyiapkan pesanan Anda.<br>Estimasi <strong>15–25 menit</strong>.</div>
+        </div>
+
+        <!-- Order detail card -->
+        <div class="gp-order-card">
+          <div style="font-size:10px; font-weight:800; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:10px;">Detail Pesanan</div>
+          <div id="gpSuccessDetail"></div>
+          <div style="display:flex; justify-content:space-between; font-weight:900; font-size:17px; color:var(--primary); padding-top:12px; border-top:1.5px dashed var(--border); margin-top:10px;">
+            <span>Total Tagihan</span><span id="gpSuccessTotal">-</span>
+          </div>
+        </div>
+
+        <!-- ORDER PROGRESS TRACKER — redesigned as timeline -->
+        <div id="gpProgressBox" style="background:var(--card);border:1.5px solid var(--border-light);border-radius:var(--radius);padding:16px;margin-bottom:14px;width:100%;box-shadow:var(--shadow-sm);">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:14px;">
+            <span style="font-size:14px;">📍</span>
+            <span style="font-size:11px;font-weight:800;color:var(--text-muted);text-transform:uppercase;letter-spacing:.7px;">Status Pesanan</span>
+            <span style="margin-left:auto;background:var(--primary-bg);color:var(--primary);font-size:9px;font-weight:800;padding:3px 8px;border-radius:20px;border:1px solid #FFD4BC;">LIVE</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:0;" id="gpProgressSteps">
+            <div class="gp-prog-step" id="gpProg1" style="position:relative;padding-left:30px;padding-bottom:16px;">
+              <div class="gp-prog-dot" style="position:absolute;left:0;top:0;width:16px;height:16px;background:var(--accent);box-shadow:0 0 0 3px rgba(0,200,150,0.2);"></div>
+              <div style="position:absolute;left:7px;top:16px;width:2px;height:calc(100% - 8px);background:var(--border-light);"></div>
+              <div><div style="font-size:13px;font-weight:800;color:var(--accent);">✅ Pesanan Diterima</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px;" id="gpProgTime1">Baru saja</div></div>
+            </div>
+            <div class="gp-prog-step" id="gpProg2" style="position:relative;padding-left:30px;padding-bottom:16px;">
+              <div class="gp-prog-dot" style="position:absolute;left:0;top:0;width:16px;height:16px;background:var(--border);border:2px solid var(--border-light);"></div>
+              <div style="position:absolute;left:7px;top:16px;width:2px;height:calc(100% - 8px);background:var(--border-light);"></div>
+              <div><div style="font-size:13px;font-weight:700;color:var(--text-muted);">👨‍🍳 Diproses Dapur</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Estimasi 10–15 menit</div></div>
+            </div>
+            <div class="gp-prog-step" id="gpProg3" style="position:relative;padding-left:30px;padding-bottom:16px;">
+              <div class="gp-prog-dot" style="position:absolute;left:0;top:0;width:16px;height:16px;background:var(--border);border:2px solid var(--border-light);"></div>
+              <div style="position:absolute;left:7px;top:16px;width:2px;height:calc(100% - 8px);background:var(--border-light);"></div>
+              <div><div style="font-size:13px;font-weight:700;color:var(--text-muted);">🚶 Sedang Diantar</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Estimasi 5 menit</div></div>
+            </div>
+            <div class="gp-prog-step" id="gpProg4" style="position:relative;padding-left:30px;">
+              <div class="gp-prog-dot" style="position:absolute;left:0;top:0;width:16px;height:16px;background:var(--border);border:2px solid var(--border-light);"></div>
+              <div><div style="font-size:13px;font-weight:700;color:var(--text-muted);">🎉 Pesanan Tiba!</div><div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Selamat menikmati</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Payment confirmation box -->
+        <div id="gpSuccessPayBox" style="background:var(--accent-light); border:1.5px solid #A7F3D0; border-radius:var(--radius-sm); padding:14px 16px; margin-bottom:16px; text-align:left; width:100%; display:flex; gap:12px; align-items:flex-start;">
+          <span style="font-size:22px;flex-shrink:0;margin-top:1px;">✅</span>
+          <div>
+            <div style="font-weight:800; font-size:13px; color:#065F46; margin-bottom:4px;" id="gpSuccessPayTitle">Konfirmasi pesanan diterima</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;" id="gpSuccessPayLabel"></div>
+            <div style="font-size:12px; color:var(--text-secondary); line-height:1.6;" id="gpSuccessPayBody">Staf kami akan mengantar pesanan ke kamar Anda.</div>
+            <div style="display:none;" id="gpSuccessRoom"></div>
+          </div>
+        </div>
+
+        <!-- RATING — enhanced design -->
+        <div id="gpRatingBox" style="margin-bottom:16px;background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:16px;width:100%;box-shadow:var(--shadow-sm);">
+          <div style="text-align:center;margin-bottom:14px;">
+            <div style="font-size:15px;font-weight:900;color:var(--text-primary);">⭐ Bagaimana pengalaman Anda?</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Beri nilai tiap aspek layanan kami</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg);padding:10px 12px;border-radius:10px;">
+              <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:18px;">🛎️</span><span style="font-size:12.5px;font-weight:700;">Pelayanan</span></div>
+              <div style="display:flex;gap:3px;">
+                <span class="gp-star gp-star-service" data-cat="service" data-v="1" onclick="gpSetCatRating('service',1)" style="font-size:24px;cursor:pointer;filter:grayscale(1);transition:all .15s;user-select:none;">⭐</span>
+                <span class="gp-star gp-star-service" data-cat="service" data-v="2" onclick="gpSetCatRating('service',2)" style="font-size:24px;cursor:pointer;filter:grayscale(1);transition:all .15s;user-select:none;">⭐</span>
+                <span class="gp-star gp-star-service" data-cat="service" data-v="3" onclick="gpSetCatRating('service',3)" style="font-size:24px;cursor:pointer;filter:grayscale(1);transition:all .15s;user-select:none;">⭐</span>
+                <span class="gp-star gp-star-service" data-cat="service" data-v="4" onclick="gpSetCatRating('service',4)" style="font-size:24px;cursor:pointer;filter:grayscale(1);transition:all .15s;user-select:none;">⭐</span>
+                <span class="gp-star gp-star-service" data-cat="service" data-v="5" onclick="gpSetCatRating('service',5)" style="font-size:24px;cursor:pointer;filter:grayscale(1);transition:all .15s;user-select:none;">⭐</span>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg);padding:10px 12px;border-radius:10px;">
+              <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:18px;">🍽️</span><span style="font-size:12.5px;font-weight:700;">Makanan</span></div>
+              <div style="display:flex;gap:3px;">
+                <span class="gp-star gp-star-food" data-cat="food" data-v="1" onclick="gpSetCatRating('food',1)" style="font-size:24px;cursor:pointer;filter:grayscale(1);transition:all .15s;user-select:none;">⭐</span>
+                <span class="gp-star gp-star-food" data-cat="food" data-v="2" onclick="gpSetCatRating('food',2)" style="font-size:24px;cursor:pointer;filter:grayscale(1);transition:all .15s;user-select:none;">⭐</span>
+                <span class="gp-star gp-star-food" data-cat="food" data-v="3" onclick="gpSetCatRating('food',3)" style="font-size:24px;cursor:pointer;filter:grayscale(1);transition:all .15s;user-select:none;">⭐</span>
+                <span class="gp-star gp-star-food" data-cat="food" data-v="4" onclick="gpSetCatRating('food',4)" style="font-size:24px;cursor:pointer;filter:grayscale(1);transition:all .15s;user-select:none;">⭐</span>
+                <span class="gp-star gp-star-food" data-cat="food" data-v="5" onclick="gpSetCatRating('food',5)" style="font-size:24px;cursor:pointer;filter:grayscale(1);transition:all .15s;user-select:none;">⭐</span>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg);padding:10px 12px;border-radius:10px;">
+              <div style="display:flex;align-items:center;gap:8px;"><span style="font-size:18px;">🥤</span><span style="font-size:12.5px;font-weight:700;">Minuman</span></div>
+              <div style="display:flex;gap:3px;">
+                <span class="gp-star gp-star-drink" data-cat="drink" data-v="1" onclick="gpSetCatRating('drink',1)" style="font-size:24px;cursor:pointer;filter:grayscale(1);transition:all .15s;user-select:none;">⭐</span>
+                <span class="gp-star gp-star-drink" data-cat="drink" data-v="2" onclick="gpSetCatRating('drink',2)" style="font-size:24px;cursor:pointer;filter:grayscale(1);transition:all .15s;user-select:none;">⭐</span>
+                <span class="gp-star gp-star-drink" data-cat="drink" data-v="3" onclick="gpSetCatRating('drink',3)" style="font-size:24px;cursor:pointer;filter:grayscale(1);transition:all .15s;user-select:none;">⭐</span>
+                <span class="gp-star gp-star-drink" data-cat="drink" data-v="4" onclick="gpSetCatRating('drink',4)" style="font-size:24px;cursor:pointer;filter:grayscale(1);transition:all .15s;user-select:none;">⭐</span>
+                <span class="gp-star gp-star-drink" data-cat="drink" data-v="5" onclick="gpSetCatRating('drink',5)" style="font-size:24px;cursor:pointer;filter:grayscale(1);transition:all .15s;user-select:none;">⭐</span>
+              </div>
+            </div>
+          </div>
+          <textarea id="gpFeedbackText" placeholder="Komentar tambahan (opsional)..." style="width:100%;font-size:12.5px;padding:10px 12px;border:1.5px solid var(--border);border-radius:10px;resize:none;height:60px;box-sizing:border-box;font-family:inherit;background:var(--bg);outline:none;" onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+          <button onclick="gpSubmitRating()" style="margin-top:10px;width:100%;padding:12px;background:linear-gradient(135deg,var(--primary),#FF6B35);color:white;border:none;border-radius:10px;font-weight:800;font-size:13.5px;cursor:pointer;box-shadow:0 4px 12px rgba(232,64,10,0.3);">⭐ Kirim Feedback</button>
+        </div>
+
+        <!-- Action buttons -->
+        <button class="btn btn-primary btn-block" id="gpOrderAnotherBtn" style="padding:15px; font-size:14.5px; margin-bottom:10px;" onclick="gpOrderAnother()">🍜 Pesan Lagi</button>
+        <button class="btn btn-secondary btn-block" style="padding:14px; font-size:14px; font-weight:800;" onclick="openOrderHistory()">📋 Lihat Status Pesanan</button>
+        <div style="margin-top:18px; font-size:11.5px; color:var(--text-muted); text-align:center; line-height:1.6;">Ada masalah? Hubungi <strong style="color:var(--primary);">Ext. 0</strong> dari telepon kamar.</div>
+      </div>
+    </div>
+
+  </div><!-- end gp-content -->
+
+  <!-- DELAYED FEEDBACK POPUP -->
+  <div id="gpFeedbackPopup" style="display:none; position:fixed; bottom:0; left:0; right:0; z-index:9999; padding:0 12px 16px; pointer-events:none;">
+    <div style="background:white; border-radius:20px 20px 16px 16px; box-shadow:0 -4px 32px rgba(0,0,0,0.18); padding:20px 18px 18px; pointer-events:auto; transform:translateY(100%); transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1); max-width:480px; margin:0 auto;" id="gpFeedbackPopupInner">
+      <div style="width:36px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 14px;"></div>
+      <button onclick="gpDismissFeedbackPopup()" style="position:absolute;top:14px;right:14px;background:var(--bg);border:none;width:28px;height:28px;border-radius:50%;font-size:14px;cursor:pointer;color:var(--text-muted);display:flex;align-items:center;justify-content:center;">✕</button>
+      <div style="text-align:center;margin-bottom:14px;">
+        <div style="font-size:20px;margin-bottom:4px;">🙏</div>
+        <div style="font-size:14px;font-weight:800;color:var(--text-primary);">Bagaimana pesanan Anda?</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:3px;">Hanya 3 klik — tidak wajib diisi</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg);padding:8px 12px;border-radius:10px;">
+          <div style="display:flex;align-items:center;gap:7px;"><span style="font-size:16px;">🛎️</span><span style="font-size:12px;font-weight:700;">Pelayanan</span></div>
+          <div style="display:flex;gap:3px;">
+            <span class="gpfb-star gpfb-service" data-v="1" onclick="gpFbSetRating('service',1)" style="font-size:20px;cursor:pointer;filter:grayscale(1);transition:.12s;user-select:none;">⭐</span>
+            <span class="gpfb-star gpfb-service" data-v="2" onclick="gpFbSetRating('service',2)" style="font-size:20px;cursor:pointer;filter:grayscale(1);transition:.12s;user-select:none;">⭐</span>
+            <span class="gpfb-star gpfb-service" data-v="3" onclick="gpFbSetRating('service',3)" style="font-size:20px;cursor:pointer;filter:grayscale(1);transition:.12s;user-select:none;">⭐</span>
+            <span class="gpfb-star gpfb-service" data-v="4" onclick="gpFbSetRating('service',4)" style="font-size:20px;cursor:pointer;filter:grayscale(1);transition:.12s;user-select:none;">⭐</span>
+            <span class="gpfb-star gpfb-service" data-v="5" onclick="gpFbSetRating('service',5)" style="font-size:20px;cursor:pointer;filter:grayscale(1);transition:.12s;user-select:none;">⭐</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg);padding:8px 12px;border-radius:10px;">
+          <div style="display:flex;align-items:center;gap:7px;"><span style="font-size:16px;">🍽️</span><span style="font-size:12px;font-weight:700;">Makanan</span></div>
+          <div style="display:flex;gap:3px;">
+            <span class="gpfb-star gpfb-food" data-v="1" onclick="gpFbSetRating('food',1)" style="font-size:20px;cursor:pointer;filter:grayscale(1);transition:.12s;user-select:none;">⭐</span>
+            <span class="gpfb-star gpfb-food" data-v="2" onclick="gpFbSetRating('food',2)" style="font-size:20px;cursor:pointer;filter:grayscale(1);transition:.12s;user-select:none;">⭐</span>
+            <span class="gpfb-star gpfb-food" data-v="3" onclick="gpFbSetRating('food',3)" style="font-size:20px;cursor:pointer;filter:grayscale(1);transition:.12s;user-select:none;">⭐</span>
+            <span class="gpfb-star gpfb-food" data-v="4" onclick="gpFbSetRating('food',4)" style="font-size:20px;cursor:pointer;filter:grayscale(1);transition:.12s;user-select:none;">⭐</span>
+            <span class="gpfb-star gpfb-food" data-v="5" onclick="gpFbSetRating('food',5)" style="font-size:20px;cursor:pointer;filter:grayscale(1);transition:.12s;user-select:none;">⭐</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg);padding:8px 12px;border-radius:10px;">
+          <div style="display:flex;align-items:center;gap:7px;"><span style="font-size:16px;">🥤</span><span style="font-size:12px;font-weight:700;">Minuman</span></div>
+          <div style="display:flex;gap:3px;">
+            <span class="gpfb-star gpfb-drink" data-v="1" onclick="gpFbSetRating('drink',1)" style="font-size:20px;cursor:pointer;filter:grayscale(1);transition:.12s;user-select:none;">⭐</span>
+            <span class="gpfb-star gpfb-drink" data-v="2" onclick="gpFbSetRating('drink',2)" style="font-size:20px;cursor:pointer;filter:grayscale(1);transition:.12s;user-select:none;">⭐</span>
+            <span class="gpfb-star gpfb-drink" data-v="3" onclick="gpFbSetRating('drink',3)" style="font-size:20px;cursor:pointer;filter:grayscale(1);transition:.12s;user-select:none;">⭐</span>
+            <span class="gpfb-star gpfb-drink" data-v="4" onclick="gpFbSetRating('drink',4)" style="font-size:20px;cursor:pointer;filter:grayscale(1);transition:.12s;user-select:none;">⭐</span>
+            <span class="gpfb-star gpfb-drink" data-v="5" onclick="gpFbSetRating('drink',5)" style="font-size:20px;cursor:pointer;filter:grayscale(1);transition:.12s;user-select:none;">⭐</span>
+          </div>
+        </div>
+      </div>
+      <textarea id="gpFbComment" placeholder="Komentar tambahan (opsional)..." style="width:100%;font-size:12px;padding:8px 10px;border:1.5px solid var(--border);border-radius:10px;resize:none;height:52px;box-sizing:border-box;font-family:inherit;background:white;margin-bottom:10px;"></textarea>
+      <div style="display:grid;grid-template-columns:1fr 2fr;gap:8px;">
+        <button onclick="gpDismissFeedbackPopup()" style="padding:11px 0;border-radius:10px;border:1.5px solid var(--border);background:white;font-size:12px;font-weight:700;color:var(--text-secondary);cursor:pointer;">Lewati</button>
+        <button onclick="gpSubmitFeedbackPopup()" style="padding:11px 0;border-radius:10px;border:none;background:var(--primary);color:white;font-size:13px;font-weight:800;cursor:pointer;">⭐ Kirim Feedback</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FLOATING CART FAB -->
+  <div class="gp-cart-fab" id="gpCartFab" onclick="gpGoToStep(4)">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <span style="font-size:20px;">🛒</span>
+      <div>
+        <div style="font-size:13px; font-weight:800;">Lihat Keranjang</div>
+        <div style="font-size:11px; opacity:0.85;" id="gpCartFabSub">0 item</div>
+      </div>
+    </div>
+    <span class="gp-cart-count" id="gpCartFabTotal">Rp 0</span>
+  </div>
+
+</div><!-- end guestPortal -->
+
+<!-- Order History Screen -->
+<div id="gpOrderHistory">
+  <div class="goh-header">
+    <div class="goh-header-top">
+      <div class="goh-title">📋 Riwayat Pesanan</div>
+      <button class="goh-close" onclick="closeOrderHistory()">✕</button>
+    </div>
+    <div class="goh-room" id="gohRoomLabel">Kamar —</div>
+  </div>
+  <div class="goh-body" id="gohBody"></div>
+</div>
+
+<!-- Post-Checkout Feedback -->
+<div id="postCheckoutFeedback">
+  <div class="pcf-sheet">
+    <div class="pcf-header">
+      <div class="pcf-drag"></div>
+      <div class="pcf-icon">⭐</div>
+      <div class="pcf-title">Bagaimana Pesanan Anda?</div>
+      <div class="pcf-sub">Ulasan Anda membantu kami terus berkembang</div>
+    </div>
+    <div class="pcf-body" id="pcfFormState">
+      <div class="pcf-order-summary">
+        <div class="pcf-order-label">Pesanan Anda</div>
+        <div class="pcf-order-items" id="pcfOrderItems">—</div>
+        <div class="pcf-order-total" id="pcfOrderTotal">Total: —</div>
+      </div>
+      <div class="pcf-cat-row"><div class="pcf-cat-left"><div class="pcf-cat-emoji">🍽️</div><div class="pcf-cat-name">Kualitas Makanan</div></div><div class="pcf-stars" id="pcfStarsFood">
+        <span class="pcf-star" data-cat="food" data-val="1" onclick="pcfSetStar('food',1)">★</span>
+        <span class="pcf-star" data-cat="food" data-val="2" onclick="pcfSetStar('food',2)">★</span>
+        <span class="pcf-star" data-cat="food" data-val="3" onclick="pcfSetStar('food',3)">★</span>
+        <span class="pcf-star" data-cat="food" data-val="4" onclick="pcfSetStar('food',4)">★</span>
+        <span class="pcf-star" data-cat="food" data-val="5" onclick="pcfSetStar('food',5)">★</span>
+      </div></div>
+      <div class="pcf-cat-row"><div class="pcf-cat-left"><div class="pcf-cat-emoji">🏃</div><div class="pcf-cat-name">Kecepatan Layanan</div></div><div class="pcf-stars" id="pcfStarsService">
+        <span class="pcf-star" data-cat="service" data-val="1" onclick="pcfSetStar('service',1)">★</span>
+        <span class="pcf-star" data-cat="service" data-val="2" onclick="pcfSetStar('service',2)">★</span>
+        <span class="pcf-star" data-cat="service" data-val="3" onclick="pcfSetStar('service',3)">★</span>
+        <span class="pcf-star" data-cat="service" data-val="4" onclick="pcfSetStar('service',4)">★</span>
+        <span class="pcf-star" data-cat="service" data-val="5" onclick="pcfSetStar('service',5)">★</span>
+      </div></div>
+      <div class="pcf-cat-row"><div class="pcf-cat-left"><div class="pcf-cat-emoji">🥤</div><div class="pcf-cat-name">Minuman</div></div><div class="pcf-stars" id="pcfStarsDrink">
+        <span class="pcf-star" data-cat="drink" data-val="1" onclick="pcfSetStar('drink',1)">★</span>
+        <span class="pcf-star" data-cat="drink" data-val="2" onclick="pcfSetStar('drink',2)">★</span>
+        <span class="pcf-star" data-cat="drink" data-val="3" onclick="pcfSetStar('drink',3)">★</span>
+        <span class="pcf-star" data-cat="drink" data-val="4" onclick="pcfSetStar('drink',4)">★</span>
+        <span class="pcf-star" data-cat="drink" data-val="5" onclick="pcfSetStar('drink',5)">★</span>
+      </div></div>
+      <textarea class="pcf-textarea" id="pcfComment" rows="3" placeholder="Komentar tambahan (opsional)..."></textarea>
+      <button class="pcf-submit" onclick="pcfSubmit()">🌟 Kirim Ulasan</button>
+      <button class="pcf-skip" onclick="pcfSkip()">Lewati</button>
+    </div>
+    <div id="pcfThankState" style="display:none;">
+      <div class="pcf-thank-wrap">
+        <div class="pcf-thank-icon">🎉</div>
+        <div class="pcf-thank-stars" id="pcfThankStars">⭐⭐⭐⭐⭐</div>
+        <div class="pcf-thank-title">Terima Kasih!</div>
+        <div class="pcf-thank-sub">Ulasan Anda sangat berarti bagi kami.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- Firebase SDK initialised in <head> (v12.12.0) —
+     duplicate block removed to avoid duplicate-app errors -->
+
+<script>
+// ================================================================
+//  STANDALONE GUEST PORTAL — ENGINE
+//  Berbagi data dengan FoodPartner_v2.html via:
+//    • Firebase Firestore (orders, settings, feedback)
+//    • localStorage (keys yang sama: fp_*, fp_orders, dll.)
+// ================================================================
+
+// ────────────────────────────────────────────────────────────
+// MENU CATALOG (sinkron dengan FoodPartner_v2.html)
+// ────────────────────────────────────────────────────────────
+const menuCatalog = [
+  { id:1,  name:'Nasi Goreng Spesial', emoji:'🍳', price:45000, cat:'Makanan', desc:'Nasi goreng khas dengan telur mata sapi, ayam, & sayuran segar', spicy:true,  popular:true,  img:'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=120&q=70' },
+  { id:2,  name:'Ayam Bakar',          emoji:'🍗', price:55000, cat:'Makanan', desc:'Ayam kampung bakar bumbu kecap, disajikan dengan lalapan & sambal', spicy:false, popular:true,  img:'https://images.unsplash.com/photo-1598515214211-89d3c73ae83b?w=120&q=70' },
+  { id:3,  name:'Soto Ayam',           emoji:'🍲', price:35000, cat:'Makanan', desc:'Soto kuning gurih dengan suwiran ayam, telur, & bihun',            spicy:false, popular:false, img:'https://images.unsplash.com/photo-1635252595716-8f4ad7e9d3a4?w=120&q=70' },
+  { id:4,  name:'Mie Goreng Seafood',  emoji:'🍜', price:55000, cat:'Makanan', desc:'Mie goreng dengan udang, cumi, & sayuran dalam saus tiram',        spicy:false, popular:true,  img:'https://images.unsplash.com/photo-1555126634-323283e090fa?w=120&q=70' },
+  { id:5,  name:'Gado-Gado',           emoji:'🥗', price:30000, cat:'Makanan', desc:'Sayuran segar dengan saus kacang khas & kerupuk renyah',           spicy:false, popular:false, img:'https://images.unsplash.com/photo-1547592180-85f173990554?w=120&q=70' },
+  { id:6,  name:'Es Teh Manis',        emoji:'🧊', price:12000, cat:'Minuman', desc:'Teh manis dingin menyegarkan',                                     spicy:false, popular:true,  img:'https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=120&q=70' },
+  { id:7,  name:'Es Kopi Susu',        emoji:'☕', price:28000, cat:'Minuman', desc:'Kopi susu kekinian dengan gula aren & es batu',                    spicy:false, popular:true,  img:'https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=120&q=70' },
+  { id:8,  name:'Jus Alpukat',         emoji:'🥑', price:25000, cat:'Minuman', desc:'Jus alpukat segar dengan susu coklat',                             spicy:false, popular:false, img:'https://images.unsplash.com/photo-1623065422902-30a2d299bbe4?w=120&q=70' },
+  { id:9,  name:'Air Mineral',         emoji:'💧', price:8000,  cat:'Minuman', desc:'Air mineral 600ml',                                                spicy:false, popular:false, img:'https://images.unsplash.com/photo-1548839140-29a749e1cf4d?w=120&q=70' },
+  { id:10, name:'Pisang Goreng',       emoji:'🍌', price:20000, cat:'Snack',   desc:'Pisang kepok goreng crispy dengan topping coklat & keju',          spicy:false, popular:true,  img:'https://images.unsplash.com/photo-1588347818036-5f8f15f91b6e?w=120&q=70' },
+  { id:11, name:'Lumpia Goreng',       emoji:'🥟', price:22000, cat:'Snack',   desc:'Lumpia goreng isi sayuran & ayam, renyah di luar lembut di dalam', spicy:false, popular:false, img:'https://images.unsplash.com/photo-1563245372-f21724e3856d?w=120&q=70' },
+  { id:20, name:'Air Mineral Botol',   emoji:'💧', price:15000, cat:'Minibar', desc:'Air mineral botol 600ml',                                          spicy:false, popular:false, img:'https://images.unsplash.com/photo-1548839140-29a749e1cf4d?w=120&q=70' },
+  { id:21, name:'Coca-Cola',           emoji:'🥤', price:20000, cat:'Minibar', desc:'Minuman bersoda kaleng 330ml',                                     spicy:false, popular:false, img:'https://images.unsplash.com/photo-1554866585-cd94860890b7?w=120&q=70' },
+  { id:22, name:'Mixed Nuts',          emoji:'🥜', price:35000, cat:'Minibar', desc:'Kacang campur panggang 100g',                                      spicy:false, popular:false, img:'https://images.unsplash.com/photo-1599599810769-bcde5a160d32?w=120&q=70' },
+  { id:23, name:'Coklat Batang',       emoji:'🍫', price:25000, cat:'Minibar', desc:'Coklat batang premium 40g',                                        spicy:false, popular:false, img:'https://images.unsplash.com/photo-1481391319762-47dff72954d9?w=120&q=70' },
+];
+
+// ────────────────────────────────────────────────────────────
+// VALID ROOMS (Lantai 3–5, 17 kamar per lantai)
+// ────────────────────────────────────────────────────────────
+const VALID_ROOMS = new Set();
+[3,4,5].forEach(f => { for (let i=1; i<=17; i++) VALID_ROOMS.add(String(f*100+i)); });
+
+// ────────────────────────────────────────────────────────────
+// TAX & PAYMENT SETTINGS (baca dari localStorage — disimpan FoodPartner)
+// ────────────────────────────────────────────────────────────
+const TAX_SETTINGS_KEY = 'fp_tax_settings';
+const PAYMENT_SETTINGS_KEY = 'fp_payment_settings';
+
+let SERVICE_PCT = 0.05;
+let TAX_PCT     = 0.11;
+let TAX_MODE    = 'exclusive';
+
+function loadTaxSettings() {
+  try { const s = localStorage.getItem(TAX_SETTINGS_KEY); if (s) return JSON.parse(s); } catch(e) {}
+  return { serviceActive:true, servicePct:5, taxActive:true, taxPct:11, taxMode:'exclusive' };
+}
+
+function applyTaxSettings() {
+  const s = loadTaxSettings();
+  SERVICE_PCT = s.serviceActive ? s.servicePct / 100 : 0;
+  TAX_PCT     = s.taxActive     ? s.taxPct     / 100 : 0;
+  TAX_MODE    = s.taxMode || 'exclusive';
+}
+applyTaxSettings();
+
+function loadPaymentSettings() {
+  try { const s = localStorage.getItem(PAYMENT_SETTINGS_KEY); if (s) return JSON.parse(s); } catch(e) {}
+  return { cash:true, qris:true, debit:true, ewallet:true, chargeRoom:false };
+}
+
+// ────────────────────────────────────────────────────────────
+// MENU AVAILABILITY (baca dari localStorage — disimpan FoodPartner)
+// ────────────────────────────────────────────────────────────
+const INV_KEY       = 'fp_menu_availability';
+const INV_STOCK_KEY = 'fp_menu_stock';
+let menuAvailability = {};
+let menuStockData    = {};
+
+function loadAvailability() {
+  try { const s = localStorage.getItem(INV_KEY); if (s) return JSON.parse(s); } catch(e) {}
+  const def = {}; menuCatalog.forEach(m => def[m.id] = true); return def;
+}
+function loadStockData() {
+  try { const s = localStorage.getItem(INV_STOCK_KEY); if (s) return JSON.parse(s); } catch(e) {}
+  return {};
+}
+
+menuAvailability = loadAvailability();
+menuStockData    = loadStockData();
+menuCatalog.forEach(m => {
+  if (menuAvailability[m.id] === undefined) menuAvailability[m.id] = true;
+  if (!menuStockData[m.id]) menuStockData[m.id] = { limited:false, max:20, remain:20 };
+});
+
+function isMenuAvailable(id) { return menuAvailability[id] !== false; }
+function getStock(id) { return menuStockData[id] || { limited:false, max:20, remain:20 }; }
+function stockTier(id) {
+  const s = getStock(id);
+  if (!s.limited || s.remain <= 0) return s.limited ? 'empty' : 'ok';
+  const pct = s.remain / s.max;
+  if (pct <= 0.1) return 'low';
+  if (pct <= 0.3) return 'warn';
+  return 'ok';
+}
+
+// ────────────────────────────────────────────────────────────
+// ORDERS (baca/tulis ke localStorage + Firestore)
+// ────────────────────────────────────────────────────────────
+const ORDERS_KEY = 'fp_orders';
+let orders = [];
+
+function loadOrders() {
+  try { const s = localStorage.getItem(ORDERS_KEY); if (s) orders = JSON.parse(s); } catch(e) {}
+}
+loadOrders();
+
+function saveOrders() {
+  try { localStorage.setItem(ORDERS_KEY, JSON.stringify(orders.slice(0, 500))); } catch(e) {}
+}
+
+function _nextOrderId() {
+  const today = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  const prefix = `${pad(today.getDate())}${pad(today.getMonth()+1)}-`;
+  const existing = orders.filter(o => o.id.startsWith(prefix));
+  const maxSeq = existing.reduce((m, o) => {
+    const seq = parseInt(o.id.split('-').pop() || '0');
+    return Math.max(m, seq);
+  }, 0);
+  return `${prefix}${String(maxSeq+1).padStart(3,'0')}`;
+}
+
+function _fbSaveOrder(order) {
+  if (!window._fbDb || !window._FB) return;
+
+  // Build payload — merges snippet's field names with portal's full order data
+  const payload = {
+    // ── portal full-detail fields (base) ──────────────────
+    ...order,
+    // ── snippet-compatible fields (override) ──────────────
+    roomNumber   : order.room,
+    itemsSummary : (order.items || []).map(i => `${i.qty}× ${i.name}`), // string summary for dashboard
+    notes        : order.note || '',
+    status       : (order.status || 'new'),
+    timestamp    : window._FB.serverTimestamp(),
+    updatedAt    : window._FB.serverTimestamp(),
+    source       : 'guest_portal',   // ← TAG: dikenali Room Order Taker untuk notifikasi real-time
+    portalVersion: '2.0',
+    // keep order.items (object array) intact via ...order above
+  };
+
+  // addDoc (auto-ID) keeps a Firestore-native doc ID alongside order.id
+  window._FB.addDoc(
+    window._FB.collection(window._fbDb, 'orders'),
+    payload
+  ).catch(e => console.warn('[GP] Firestore sendOrder:', e));
+}
+
+// Listen to Firestore orders realtime
+let _gpOrdersUnsub = null; // track active listener for cleanup
+function _gpListenOrders() {
+  if (!window._fbDb || !window._FB) return;
+  // Unsubscribe previous listener before creating new one
+  if (typeof _gpOrdersUnsub === 'function') { _gpOrdersUnsub(); _gpOrdersUnsub = null; }
+  const q = window._FB.query(
+    window._FB.collection(window._fbDb, 'orders'),
+    window._FB.orderBy('createdAt', 'desc')
+  );
+  _gpOrdersUnsub = window._FB.onSnapshot(q, snap => {
+    const fbOrders = [];
+    snap.forEach(d => { const data = d.data(); if (data.id) fbOrders.push(data); });
+    // Always sync — even empty snapshot (e.g., orders deleted from dashboard)
+    orders = fbOrders;
+    saveOrders();
+    // Refresh order history if open
+    if (document.getElementById('gpOrderHistory').classList.contains('open')) {
+      renderOrderHistory();
+    }
+    // Update progress tracker UI for current room if on step 6
+    if (gpCurrentStep === 6 && _gpProgressInterval) {
+      // Progress tracker auto-updates via interval, but force immediate refresh
+    }
+    // Check auto-trigger feedback for done orders
+    _pcfWatchForDoneOrders();
+    // Update returning banner if visible: refresh subtitle
+    const banner = document.getElementById('gpReturningBanner');
+    if (banner && gpRoomNum) {
+      const activeOrder = _gpGetActiveOrder(gpRoomNum);
+      const subEl = banner.querySelector('div > div:last-child');
+      if (subEl) {
+        subEl.textContent = activeOrder
+          ? '📋 Pesanan Anda masih aktif — lihat status di bawah'
+          : `Kamar ${gpRoomNum} — pilih menu favorit Anda`;
+      }
+    }
+  }, e => console.warn('[GP] Firestore onSnapshot:', e));
+}
+
+// ────────────────────────────────────────────────────────────
+// DEPOSIT
+// ────────────────────────────────────────────────────────────
+const DEPOSIT_DATA_KEY = 'fp_deposit_data';
+function loadDepositData() {
+  try { const s = localStorage.getItem(DEPOSIT_DATA_KEY); if (s) return JSON.parse(s); } catch(e) {}
+  return {};
+}
+function getDepositBalance(roomNum) {
+  return loadDepositData()[String(roomNum)] || 0;
+}
+function deductDeposit(roomNum, amount) {
+  const data = loadDepositData();
+  const key = String(roomNum);
+  if ((data[key] || 0) < amount) return false;
+  data[key] = (data[key] || 0) - amount;
+  try { localStorage.setItem(DEPOSIT_DATA_KEY, JSON.stringify(data)); } catch(e) {}
+  return true;
+}
+
+// ────────────────────────────────────────────────────────────
+// CALC ORDER TOTAL
+// ────────────────────────────────────────────────────────────
+function calcOrderTotal(items) {
+  const sub = items.reduce((s, i) => s + i.qty * i.price, 0);
+  if (TAX_MODE === 'inclusive') {
+    const svcRate = SERVICE_PCT, taxRate = TAX_PCT;
+    const divisor = (1 + svcRate) * (1 + taxRate);
+    const net     = Math.round(sub / divisor);
+    const service = Math.round(net * svcRate);
+    const tax     = Math.round((net + service) * taxRate);
+    return { sub: net, service, tax, total: sub };
+  } else {
+    const service = Math.round(sub * SERVICE_PCT);
+    const tax     = Math.round((sub + service) * TAX_PCT);
+    return { sub, service, tax, total: sub + service + tax };
+  }
+}
+
+function fmtRp(n) { return 'Rp ' + Number(n).toLocaleString('id-ID'); }
+
+// ────────────────────────────────────────────────────────────
+// TOAST
+// ────────────────────────────────────────────────────────────
+function showToast(message, type = 'success') {
+  const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `<span>${icons[type] || 'ℹ️'}</span><span>${message}</span>`;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(20px)';
+    toast.style.transition = 'all .3s ease';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+// ────────────────────────────────────────────────────────────
+// DEDUCT STOCK
+// ────────────────────────────────────────────────────────────
+function deductMenuStock(items) {
+  items.forEach(i => {
+    const s = menuStockData[i.id];
+    if (s && s.limited && s.remain > 0) {
+      s.remain = Math.max(0, s.remain - i.qty);
+    }
+  });
+  try { localStorage.setItem(INV_STOCK_KEY, JSON.stringify(menuStockData)); } catch(e) {}
+  if (window._fbDb && window._FB) {
+    window._FB.setDoc(
+      window._FB.doc(window._fbDb, 'settings', 'menuStock'),
+      { data: menuStockData, updatedAt: window._FB.serverTimestamp() }
+    ).catch(e => console.warn('[GP] Firestore deductStock:', e));
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// PORTAL STATE
+// ────────────────────────────────────────────────────────────
+let gpRoomNum         = '';
+let gpCartItems       = {};
+let gpCurrentStep     = 1;
+let gpCatFilter       = 'Semua';
+let gpPayMethod       = 'Cash';
+let gpGuestName       = '';
+let gpGuestEmail      = '';
+let gpGuestPhone      = '';
+let gpItemNotes       = {};
+let gpCurrentRating   = 0;
+let gpCurrentRoomStatus = 'occupied';
+let _gpProgressInterval = null;
+let _gpCatRating      = { service:0, food:0, drink:0 };
+
+// FIX 4: Real-time room status guard
+let _gpRoomStatusUnsub = null;
+
+function _gpListenRoomStatus(roomNum) {
+  if (_gpRoomStatusUnsub) { _gpRoomStatusUnsub(); _gpRoomStatusUnsub = null; }
+  if (!window._fbDb || !window._FB || !roomNum) return;
+  const q = window._FB.query(
+    window._FB.collection(window._fbDb, 'roomStatus'),
+    window._FB.where('roomNum', '==', String(roomNum))
+  );
+  _gpRoomStatusUnsub = window._FB.onSnapshot(q, (snap) => {
+    if (snap.empty) return;
+    const data = snap.docs[0].data();
+    const status = data.status || 'available';
+    gpCurrentRoomStatus = status;
+    if (status === 'reserved' && gpCurrentStep > 1) {
+      _gpShowRoomBlockedBanner();
+    }
+  }, err => console.warn('[GP] roomStatus listener error:', err));
+}
+
+function _gpShowRoomBlockedBanner() {
+  let banner = document.getElementById('gpDndBanner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'gpDndBanner';
+    banner.style.cssText = [
+      'position:fixed;inset:0;z-index:9999;',
+      'background:rgba(20,20,43,0.85);display:flex;',
+      'align-items:center;justify-content:center;',
+      'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);',
+    ].join('');
+    banner.innerHTML = `
+      <div style="background:var(--card);border-radius:20px;padding:32px 24px;text-align:center;max-width:320px;margin:16px;">
+        <div style="font-size:40px;margin-bottom:12px;">🚫</div>
+        <div style="font-weight:800;font-size:18px;color:var(--danger);margin-bottom:8px;">Kamar DND</div>
+        <div style="color:var(--text-secondary);font-size:14px;margin-bottom:20px;line-height:1.55;">
+          Kamar ini saat ini tidak dapat menerima pesanan. Silakan hubungi resepsionis.
+        </div>
+        <button onclick="document.getElementById('gpDndBanner').remove(); gpGoToStep(1);"
+          style="background:var(--primary);color:#fff;border:none;border-radius:12px;
+                 padding:12px 24px;font-weight:700;font-size:15px;cursor:pointer;width:100%;">
+          Kembali
+        </button>
+      </div>`;
+    document.body.appendChild(banner);
+  }
+}
+
+// Clean up room status listener on unload
+window.addEventListener('beforeunload', () => {
+  if (typeof _gpRoomStatusUnsub === 'function') _gpRoomStatusUnsub();
+});
+
+const GP_PAY_INFO = {
+  'Cash':           { icon:'💵', title:'Cash dipilih', desc:'Siapkan uang tunai saat pengiriman. Kembalian tersedia.' },
+  'Debit/Kredit':   { icon:'💳', title:'Debit / Kartu Kredit', desc:'Mesin EDC akan dibawa oleh staf saat pengiriman.' },
+  'QRIS':           { icon:'📲', title:'QRIS dipilih', desc:'Staf akan menampilkan QR code saat pengiriman.' },
+  'E-Wallet':       { icon:'📱', title:'E-Wallet (GoPay / OVO / Dana / ShopeePay)', desc:'Transfer ke nomor yang diberikan.' },
+  'Charge to Room': { icon:'🛎️', title:'Tagih ke Kamar', desc:'Biaya ditambahkan ke tagihan kamar dan dibayar saat checkout.' },
+};
+
+// SVG logos for e-wallets (inline, no external dependency)
+const GP_EWALLET_LOGOS = {
+  'GoPay': `<svg width="36" height="36" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><circle cx="18" cy="18" r="18" fill="#00AED6"/><rect x="9" y="10" width="18" height="16" rx="4" fill="white"/><rect x="11" y="13" width="14" height="2.5" rx="1.2" fill="#00AED6"/><circle cx="20" cy="19.5" r="2" fill="#00AED6"/></svg>`,
+  'OVO':   `<svg width="36" height="36" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><circle cx="18" cy="18" r="18" fill="#4C3494"/><text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-size="11" font-weight="900" fill="white">OVO</text></svg>`,
+  'Dana':  `<svg width="36" height="36" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><circle cx="18" cy="18" r="18" fill="#118EEA"/><text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-size="10" font-weight="900" fill="white">DANA</text></svg>`,
+  'ShopeePay': `<svg width="36" height="36" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg"><circle cx="18" cy="18" r="18" fill="#EE4D2D"/><text x="50%" y="44%" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-size="6.5" font-weight="900" fill="white">Shopee</text><text x="50%" y="62%" dominant-baseline="middle" text-anchor="middle" font-family="Arial,sans-serif" font-size="6.5" font-weight="900" fill="white">Pay</text></svg>`,
+};
+function gpEwLogo(key, size=36) {
+  const svg = GP_EWALLET_LOGOS[key];
+  if (!svg) return `<span style="font-size:${size}px;">📱</span>`;
+  const sized = svg.replace(/width="\d+"/, `width="${size}"`).replace(/height="\d+"/, `height="${size}"`);
+  return sized;
+}
+
+const GP_EWALLET_DATA = {
+  'GoPay':     { icon:'🟢', number:'0812-3456-7890', name:'Dafam Enkadeli Hotel' },
+  'OVO':       { icon:'🟣', number:'0821-9876-5432', name:'Dafam Enkadeli Hotel' },
+  'Dana':      { icon:'🔵', number:'0856-1234-0099', name:'Dafam Enkadeli Hotel' },
+  'ShopeePay': { icon:'🟠', number:'0812-3456-7890', name:'Dafam Enkadeli Hotel' },
+};
+let gpEwalletSub = 'GoPay';
+
+// ────────────────────────────────────────────────────────────
+// MULTILANG
+// ────────────────────────────────────────────────────────────
+const GP_LANG = {
+  id: { spicy:'Pedas', itemNotePlaceholder:'Catatan khusus item ini...' },
+  en: { spicy:'Spicy', itemNotePlaceholder:'Note for this item...' },
+  zh: { spicy:'辣', itemNotePlaceholder:'此商品备注...' },
+};
+let gpLang = 'id';
+const gpLangOrder = ['id','en','zh'];
+function gpCycleLang() {
+  const idx = gpLangOrder.indexOf(gpLang);
+  gpLang = gpLangOrder[(idx+1) % gpLangOrder.length];
+  const btn = document.getElementById('gpLangBtn');
+  if (btn) btn.textContent = '🌐 ' + gpLang.toUpperCase();
+  gpRenderMenu();
+}
+
+// ────────────────────────────────────────────────────────────
+// STEP NAVIGATION
+// ────────────────────────────────────────────────────────────
+function gpGoToStep(step) {
+  gpCurrentStep = step;
+  document.querySelectorAll('.gp-step').forEach((s, i) => {
+    s.classList.toggle('active', i + 1 === step);
+  });
+  ['sd1','sd2','sd3','sd4','sd5'].forEach((id, i) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const isActive = i + 1 === step;
+    const isDone = i + 1 < step;
+    el.style.color = (isActive || isDone) ? 'var(--primary)' : 'var(--text-muted)';
+    el.style.fontWeight = isActive ? '900' : isDone ? '800' : '700';
+    const dot = el.querySelector('span');
+    if (dot) {
+      if (isDone) {
+        dot.style.background = 'var(--accent)';
+        dot.style.color = 'white';
+        dot.textContent = '✓';
+      } else if (isActive) {
+        dot.style.background = 'var(--primary)';
+        dot.style.color = 'white';
+        dot.textContent = String(i + 1);
+      } else {
+        dot.style.background = 'var(--border)';
+        dot.style.color = 'var(--text-muted)';
+        dot.textContent = String(i + 1);
+      }
+    }
+  });
+  ['sp1','sp2','sp3','sp4'].forEach((id,i) => {
+    const el = document.getElementById(id);
+    if (el) el.style.width = step >= i+2 ? '100%' : '0%';
+  });
+  const roomBadge = document.getElementById('gpRoomBadge');
+  if (roomBadge) roomBadge.style.display = gpRoomNum ? 'inline-flex' : 'none';
+  const roomBadgeText = document.getElementById('gpRoomBadgeText');
+  if (roomBadgeText) roomBadgeText.textContent = 'Kamar ' + gpRoomNum;
+  gpUpdateCartFab();
+
+  if (step === 2) {
+    const rl = document.getElementById('gpGuestStepRoomLabel');
+    if (rl) rl.textContent = gpRoomNum || '—';
+  }
+  if (step === 3) {
+    gpRenderMenu(); gpInitPromo(); generateMenuRecommendation();
+    // Returning QR guest (scan 2+): hide "← Data Tamu" button since they skipped step 2
+    const backBtn = document.getElementById('gpMenuBackBtn');
+    if (backBtn) {
+      backBtn.style.display = (window._gpQrScanCount >= 2) ? 'none' : '';
+    }
+  }
+  if (step === 4) gpRenderCart();
+  if (step === 5) { gpRenderPayStep(); gpCheckDepositBalance(); }
+  if (step === 6) {
+    gpCurrentRating = 0;
+    _gpCatRating = { service:0, food:0, drink:0 };
+    document.querySelectorAll('.gp-star,.gp-star-service,.gp-star-food,.gp-star-drink').forEach(s => s.style.filter = 'grayscale(1)');
+    const fb = document.getElementById('gpFeedbackText'); if (fb) fb.value = '';
+    // Pada resume flow (scan QR → langsung step 6), sembunyikan step bar
+    // karena tamu hanya lewat 2 langkah (Kamar → Status), bukan 5 langkah
+    const stepBar = document.getElementById('gpStepBar');
+    if (stepBar) stepBar.style.display = window._gpResumed ? 'none' : '';
+  } else {
+    const stepBar = document.getElementById('gpStepBar');
+    if (stepBar) stepBar.style.display = '';
+  }
+  document.querySelector('.gp-content').scrollTop = 0;
+}
+
+// ────────────────────────────────────────────────────────────
+// STEP 1: NUMPAD
+// ────────────────────────────────────────────────────────────
+function gpNumPressDouble(digits) {
+  // Insert up to as many digits as still fit (max room length = 3)
+  const room = digits.split('');
+  room.forEach(d => { if (gpRoomNum.length < 3) gpRoomNum += d; });
+  const el = document.getElementById('gpRoomDisplay');
+  el.textContent = gpRoomNum || '—';
+  el.className = 'gp-room-display' + (gpRoomNum ? ' filled' : '');
+  gpLiveRoomPreview();
+}
+
+function gpNumPress(digit) {
+  if (gpRoomNum.length >= 3) return;
+  gpRoomNum += digit;
+  const el = document.getElementById('gpRoomDisplay');
+  el.textContent = gpRoomNum || '—';
+  el.className = 'gp-room-display' + (gpRoomNum ? ' filled' : '');
+  gpLiveRoomPreview();
+}
+
+function gpNumDel() {
+  gpRoomNum = gpRoomNum.slice(0, -1);
+  const el = document.getElementById('gpRoomDisplay');
+  el.textContent = gpRoomNum || '—';
+  el.className = 'gp-room-display' + (gpRoomNum ? ' filled' : '');
+  gpLiveRoomPreview();
+}
+
+function gpLiveRoomPreview() {
+  const preview = document.getElementById('gpRoomPreviewStatus');
+  if (!preview) return;
+  if (gpRoomNum.length < 3) { preview.style.display = 'none'; return; }
+  // Baca status kamar dari localStorage (disimpan FoodPartner)
+  let roomStatus = 'available';
+  try {
+    const saved = JSON.parse(localStorage.getItem('fp_room_status') || '{}');
+    if (saved[gpRoomNum]) roomStatus = saved[gpRoomNum];
+  } catch(e) {}
+  const valid = VALID_ROOMS.has(gpRoomNum);
+  if (!valid) {
+    preview.style.display = 'block';
+    preview.style.cssText = 'display:block;background:var(--danger-light);color:var(--danger);border:1.5px solid var(--danger);padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700;text-align:center;';
+    preview.textContent = `❌ Kamar ${gpRoomNum} tidak ditemukan`;
+    return;
+  }
+  const map = {
+    occupied:   { bg:'var(--primary-bg)',  color:'var(--primary)',  border:'#FFD4BC', note:'✅ Kamar aktif — siap memesan' },
+    available:  { bg:'var(--accent-light)', color:'#065F46',        border:'#6EE7B7', note:'✅ Kamar tersedia — siap memesan' },
+    reserved:   { bg:'var(--danger-light)', color:'var(--danger)',   border:'#FECACA', note:'⛔ Kamar DND — tidak dapat memesan' },
+    room_order: { bg:'var(--warning-light)',color:'#B45309',         border:'#FDE68A', note:'🛎️ Pesanan sedang berjalan' },
+    order_sent: { bg:'var(--accent-light)', color:'#065F46',         border:'#6EE7B7', note:'✅ Pesanan sudah dikirim' },
+  };
+  const m = map[roomStatus] || map.occupied;
+  preview.style.cssText = `display:block;background:${m.bg};color:${m.color};border:1.5px solid ${m.border};padding:10px 14px;border-radius:10px;font-size:12px;font-weight:700;text-align:center;`;
+  preview.innerHTML = `🛏️ Kamar ${gpRoomNum}<br><span style="font-weight:600;font-size:11px;">${m.note}</span>`;
+}
+
+function gpConfirmRoom() {
+  if (!gpRoomNum) { gpShakeDisplay('Masukkan nomor kamar terlebih dahulu'); return; }
+  const fromQR = window._gpFromQR && window._gpQrRoom === gpRoomNum;
+  if (!fromQR && !VALID_ROOMS.has(gpRoomNum)) {
+    gpShakeDisplay('Nomor kamar tidak ditemukan. Coba lagi.');
+    gpRoomNum = '';
+    document.getElementById('gpRoomDisplay').textContent = '—';
+    document.getElementById('gpRoomDisplay').className = 'gp-room-display';
+    return;
+  }
+  // Check DND from localStorage
+  try {
+    const saved = JSON.parse(localStorage.getItem('fp_room_status') || '{}');
+    if (saved[gpRoomNum] === 'reserved') {
+      gpShakeDisplay(`Kamar ${gpRoomNum} DND — tidak dapat memesan`);
+      gpRoomNum = ''; document.getElementById('gpRoomDisplay').textContent = '—'; document.getElementById('gpRoomDisplay').className = 'gp-room-display';
+      return;
+    }
+    gpCurrentRoomStatus = saved[gpRoomNum] || 'occupied';
+  } catch(e) {}
+
+  // ── Smart flow: cek apakah kamar sudah punya pesanan aktif ──
+  const activeOrder = _gpGetActiveOrder(gpRoomNum);
+  if (activeOrder) {
+    _gpListenRoomStatus(gpRoomNum);   // ← start real-time room status guard
+    _gpResumeOrder(activeOrder);
+  } else {
+    _gpListenRoomStatus(gpRoomNum);   // ← start real-time room status guard
+    gpGoToStep(2); // Normal flow → Data Tamu → Menu → dst
+  }
+}
+
+// Cari pesanan aktif (belum selesai/dibatalkan) untuk kamar ini
+function _gpGetActiveOrder(roomNum) {
+  return orders.find(o =>
+    String(o.room) === String(roomNum) &&
+    ['new', 'kitchen', 'ready'].includes(o.status)
+  ) || null;
+}
+
+// Resume flow: tamu sudah pesan → langsung tampilkan status + opsi tambah pesanan
+function _gpResumeOrder(order) {
+  // Restore guest data dari order yang ada
+  gpGuestName  = order.guest  || gpGuestName  || '';
+  gpGuestEmail = order.guestEmail || gpGuestEmail || '';
+  gpGuestPhone = order.guestPhone || gpGuestPhone || '';
+
+  // Restore cart dari items order aktif (untuk "Tambah Item")
+  gpCartItems = {};
+  gpItemNotes = {};
+  if (order.items && Array.isArray(order.items)) {
+    order.items.forEach(i => { if (i.id && i.qty) gpCartItems[i.id] = i.qty; });
+  }
+
+  // Langsung ke step 6 (Success/Status) untuk lihat progress pesanan aktif
+  gpGoToStep(6);
+  gpStartProgressTracker(order.id);
+
+  // Update success screen dengan data order yang sudah ada
+  const _gpSetEl   = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
+  const _gpSetHtml = (id, val) => { const e = document.getElementById(id); if (e) e.innerHTML = val; };
+
+  const { total } = calcOrderTotal(order.items || []);
+  _gpSetEl('gpSuccessTotal', fmtRp(total));
+  _gpSetEl('gpSuccessRoom', 'Kamar ' + gpRoomNum);
+
+  const statusLabels = { new:'Pesanan baru diterima', kitchen:'Sedang diproses dapur', ready:'Siap diantar ke kamar' };
+  _gpSetEl('gpSuccessPayTitle', '📋 Pesanan sedang berjalan');
+  _gpSetHtml('gpSuccessPayBody',
+    `Status: <strong style="color:var(--primary);">${statusLabels[order.status] || order.status}</strong><br>` +
+    `Pesanan <strong>#${order.id}</strong> sedang dalam proses untuk <strong>Kamar ${gpRoomNum}</strong>.`
+  );
+
+  const itemsEl = document.getElementById('gpSuccessDetail');
+  if (itemsEl) {
+    itemsEl.innerHTML = (order.items || []).map(i => {
+      const menu = menuCatalog.find(m => m.id === i.id);
+      return `<div style="display:flex;justify-content:space-between;font-size:13px;padding:7px 0;border-bottom:1px solid var(--border-light);">
+        <span style="color:var(--text-secondary);">${menu ? menu.emoji : ''} ${i.qty}× ${i.name}</span>
+        <span style="font-weight:800;color:var(--text-primary);">${fmtRp(i.qty * i.price)}</span>
+      </div>`;
+    }).join('');
+  }
+
+  showToast(`📋 Kamar ${gpRoomNum} — pesanan aktif ditemukan`, 'info');
+
+  // Mark as resumed so step 6 shows contextual button label
+  window._gpResumed = true;
+  const aBtn = document.getElementById('gpOrderAnotherBtn');
+  if (aBtn) aBtn.innerHTML = '🍜 Tambah Pesanan Baru';
+}
+
+function gpShakeDisplay(msg) {
+  const el = document.getElementById('gpRoomDisplay');
+  el.classList.add('error-shake');
+  setTimeout(() => el.classList.remove('error-shake'), 400);
+  showToast(msg, 'error');
+}
+
+// ────────────────────────────────────────────────────────────
+// STEP 2: GUEST DATA
+// ────────────────────────────────────────────────────────────
+function gpConfirmGuestData() {
+  const nameEl  = document.getElementById('gpInputName');
+  const emailEl = document.getElementById('gpInputEmail');
+  const phoneEl = document.getElementById('gpInputPhone');
+  const name = nameEl.value.trim();
+  if (!name) {
+    nameEl.focus();
+    nameEl.style.borderColor = 'var(--danger)';
+    setTimeout(() => { nameEl.style.borderColor = ''; }, 2000);
+    showToast('Nama lengkap wajib diisi', 'error');
+    return;
+  }
+  const email = emailEl.value.trim();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    emailEl.focus();
+    emailEl.style.borderColor = 'var(--danger)';
+    setTimeout(() => { emailEl.style.borderColor = ''; }, 2000);
+    showToast('Format email tidak valid', 'error');
+    return;
+  }
+  gpGuestName  = name;
+  gpGuestEmail = email;
+  gpGuestPhone = phoneEl.value.trim();
+  gpGoToStep(3);
+}
+
+// ────────────────────────────────────────────────────────────
+// STEP 3: MENU RENDER
+// ────────────────────────────────────────────────────────────
+function gpFilterCat(cat, el) {
+  gpCatFilter = cat;
+  document.querySelectorAll('.gp-cat-tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+  gpRenderMenu();
+}
+
+function gpRenderMenu() {
+  const L = GP_LANG[gpLang] || GP_LANG.id;
+  let items = menuCatalog;
+  if (gpCatFilter !== 'Semua') items = items.filter(m => m.cat === gpCatFilter);
+
+  const available   = items.filter(m => isMenuAvailable(m.id));
+  const unavailable = items.filter(m => !isMenuAvailable(m.id));
+
+  const renderCard = (m, disabled) => {
+    const qty = gpCartItems[m.id] || 0;
+    const rawNote = gpItemNotes[m.id] || '';
+    // Escape for safe HTML attribute injection — prevents XSS via note content
+    const itemNote = rawNote.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const tier = stockTier(m.id);
+    const s = getStock(m.id);
+    const disabledStyle = disabled ? 'opacity:0.48;pointer-events:none;' : '';
+    const imgEl = m.img
+      ? `<div class="gp-menu-emoji" style="width:110px;min-height:110px;flex-shrink:0;overflow:hidden;background:var(--primary-bg);position:relative;"><img src="${m.img}" onerror="this.onerror=null;this.style.display='none';this.parentElement.dataset.fb='1';" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block;">${m.popular && !disabled ? '<span class="gp-popular-badge">⭐ Favorit</span>' : ''}</div>`
+      : `<div class="gp-menu-emoji" style="width:110px;min-height:110px;flex-shrink:0;background:var(--primary-bg);display:flex;align-items:center;justify-content:center;font-size:44px;position:relative;">${m.emoji}${m.popular && !disabled ? '<span class="gp-popular-badge">⭐ Favorit</span>' : ''}</div>`;
+    return `<div class="gp-menu-card" style="${disabledStyle}">
+      ${imgEl}
+      <div style="flex:1;min-width:0;padding:11px 12px 11px 12px;display:flex;flex-direction:column;justify-content:space-between;min-height:110px;box-sizing:border-box;">
+        <div>
+          <div style="display:flex;align-items:flex-start;flex-wrap:wrap;gap:4px;margin-bottom:3px;">
+            <span style="font-weight:800;font-size:14px;line-height:1.3;">${m.name}</span>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);line-height:1.45;margin-bottom:5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${m.desc}</div>
+          <div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;">
+            ${m.spicy ? `<span style="font-size:9px;font-weight:800;background:#FEE2E2;color:#B91C1C;padding:2px 7px;border-radius:10px;">🌶 ${L.spicy}</span>` : ''}
+            ${(!s.limited||tier==='ok') ? '' : tier==='warn' ? `<span class="gp-stock-badge warn">⚠️ Sisa ${s.remain}</span>` : `<span class="gp-stock-badge low">🔴 Sisa ${s.remain}</span>`}
+          </div>
+        </div>
+        ${disabled ? `<div style="font-size:11px;font-weight:700;color:var(--text-muted);margin-top:6px;">🚫 Tidak tersedia</div>` : `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">
+          <div style="font-weight:900;color:var(--primary);font-size:15px;">${fmtRp(m.price)}</div>
+          <div class="gp-qty-ctrl" style="gap:7px;">
+            <button class="gp-qty-btn${qty>0?' has-items':''}" style="width:30px;height:30px;font-size:17px;${qty===0?'opacity:0.3;pointer-events:none;':''}" onclick="gpChangeQty(${m.id},-1)">−</button>
+            <div class="gp-qty-num" id="gp-qty-${m.id}" style="font-size:15px;min-width:20px;font-weight:900;">${qty||0}</div>
+            <button class="gp-qty-btn" style="width:30px;height:30px;font-size:17px;" onclick="gpChangeQty(${m.id},1)">+</button>
+          </div>
+        </div>
+        ${qty > 0 ? `<input type="text" placeholder="${L.itemNotePlaceholder}" value="${itemNote}" oninput="gpSetItemNote(${m.id},this.value)" style="margin-top:7px;width:100%;font-size:11.5px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;box-sizing:border-box;background:var(--bg);font-family:inherit;outline:none;" onfocus="this.style.borderColor=&quot;var(--primary)&quot;" onblur="this.style.borderColor=&quot;var(--border)&quot;">` : ''}
+        `}
+      </div>
+    </div>`;
+  };
+
+  let html = available.map(m => renderCard(m, false)).join('');
+  if (unavailable.length) {
+    html += `<div style="font-size:11px;font-weight:800;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin:14px 0 8px;padding-left:2px;">🚫 Tidak Tersedia Hari Ini</div>`;
+    html += unavailable.map(m => renderCard(m, true)).join('');
+  }
+  document.getElementById('gpMenuGrid').innerHTML = html;
+}
+
+function gpChangeQty(menuId, delta) {
+  const current = gpCartItems[menuId] || 0;
+  let next = Math.max(0, current + delta);
+  const s = getStock(menuId);
+  if (s.limited && next > s.remain) { showToast(`Stok tersisa hanya ${s.remain} porsi`, 'error'); next = s.remain; }
+  if (next === 0) delete gpCartItems[menuId]; else gpCartItems[menuId] = next;
+
+  // Surgical DOM update — avoid full gpRenderMenu() which destroys note inputs mid-typing
+  const qtyEl = document.getElementById('gp-qty-' + menuId);
+  if (qtyEl) qtyEl.textContent = next;
+
+  // Update minus button state
+  const card = qtyEl ? qtyEl.closest('.gp-menu-card') : null;
+  if (card) {
+    const minusBtn = card.querySelector('.gp-qty-btn');
+    if (minusBtn) {
+      minusBtn.style.opacity = next === 0 ? '0.3' : '';
+      minusBtn.style.pointerEvents = next === 0 ? 'none' : '';
+      minusBtn.classList.toggle('has-items', next > 0);
+    }
+    // Show/hide note input without re-rendering the whole card
+    const L = GP_LANG[gpLang] || GP_LANG.id;
+    let noteInput = card.querySelector('input[type="text"][oninput]');
+    const savedNote = gpItemNotes[menuId] || '';
+    if (next > 0 && !noteInput) {
+      const container = qtyEl.closest('.gp-qty-ctrl').parentElement.parentElement;
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      inp.placeholder = L.itemNotePlaceholder;
+      inp.value = savedNote;
+      inp.setAttribute('oninput', `gpSetItemNote(${menuId},this.value)`);
+      inp.style.cssText = 'margin-top:7px;width:100%;font-size:11.5px;padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;box-sizing:border-box;background:var(--bg);font-family:inherit;outline:none;';
+      inp.addEventListener('focus', function(){ this.style.borderColor='var(--primary)'; });
+      inp.addEventListener('blur',  function(){ this.style.borderColor='var(--border)'; });
+      container.appendChild(inp);
+    } else if (next === 0 && noteInput) {
+      noteInput.remove();
+    }
+  }
+
+  gpUpdateCartFab();
+}
+
+function gpSetItemNote(menuId, val) {
+  if (val.trim()) gpItemNotes[menuId] = val;
+  else delete gpItemNotes[menuId];
+}
+
+function gpUpdateCartFab() {
+  const fab = document.getElementById('gpCartFab');
+  const totalQty = Object.values(gpCartItems).reduce((s, q) => s + q, 0);
+  const items = gpGetCartItemsList();
+  const { total } = calcOrderTotal(items);
+  if (totalQty > 0 && gpCurrentStep === 3) fab.classList.add('visible');
+  else fab.classList.remove('visible');
+  document.getElementById('gpCartFabSub').textContent = totalQty + ' item';
+  document.getElementById('gpCartFabTotal').textContent = fmtRp(total);
+}
+
+function gpGetCartItemsList() {
+  return Object.entries(gpCartItems).map(([id, qty]) => {
+    const menu = menuCatalog.find(m => m.id === parseInt(id));
+    return menu ? { id: menu.id, name: menu.name, qty, price: menu.price } : null;
+  }).filter(Boolean);
+}
+
+// ────────────────────────────────────────────────────────────
+// STEP 4: CART REVIEW
+// ────────────────────────────────────────────────────────────
+function gpRenderCart() {
+  const items = gpGetCartItemsList();
+  const { sub, service, tax, total } = calcOrderTotal(items);
+  document.getElementById('gc-room-label').textContent = 'Kamar ' + gpRoomNum;
+  const sumName = document.getElementById('gpSumName');
+  const sumContact = document.getElementById('gpSumContact');
+  if (sumName) sumName.textContent = gpGuestName || '—';
+  if (sumContact) {
+    const parts = [];
+    if (gpGuestPhone) parts.push('📱 ' + gpGuestPhone);
+    if (gpGuestEmail) parts.push('✉️ ' + gpGuestEmail);
+    sumContact.textContent = parts.join('  ·  ') || '';
+  }
+  document.getElementById('gc-sub').textContent = fmtRp(sub);
+  document.getElementById('gc-service').textContent = fmtRp(service);
+  document.getElementById('gc-tax').textContent = fmtRp(tax);
+  document.getElementById('gc-total').textContent = fmtRp(total);
+  document.getElementById('gpCartItems').innerHTML = items.map(i => {
+    const menu = menuCatalog.find(m => m.id === i.id);
+    const thumb = menu && menu.img
+      ? `<div class="gp-cart-item-emoji" style="overflow:hidden;"><img src="${menu.img}" style="width:100%;height:100%;object-fit:cover;border-radius:var(--radius-sm);" onerror="this.style.display='none'"></div>`
+      : `<div class="gp-cart-item-emoji">${menu ? menu.emoji : '🍽'}</div>`;
+    return `<div class="gp-cart-item">
+      ${thumb}
+      <div class="gp-cart-item-info">
+        <div class="gp-cart-item-name">${i.name}</div>
+        <div class="gp-cart-item-price">${i.qty} × ${fmtRp(i.price)}</div>
+      </div>
+      <div class="gp-cart-item-total">${fmtRp(i.qty * i.price)}</div>
+    </div>`;
+  }).join('');
+}
+
+// ────────────────────────────────────────────────────────────
+// STEP 5: PAYMENT
+// ────────────────────────────────────────────────────────────
+function gpRenderPayStep() {
+  const items = gpGetCartItemsList();
+  const { total } = calcOrderTotal(items);
+  document.getElementById('gp-pay-total').textContent = fmtRp(total);
+  document.getElementById('gpEwTotal').textContent = fmtRp(total);
+
+  // Update nominal label in checklist
+  const nomEl = document.getElementById('gpCheckNominal');
+  if (nomEl) nomEl.textContent = fmtRp(total);
+
+  const settings = loadPaymentSettings();
+  const allMethods = [
+    { method:'Cash',         icon:'💵', name:'Cash',       sub:'Bayar saat diantar',  key:'cash' },
+    { method:'Debit/Kredit', icon:'💳', name:'Debit / CC', sub:'Gesek saat diantar',  key:'debit' },
+    { method:'QRIS',         icon:'📲', name:'QRIS',       sub:'Scan QR di tempat',   key:'qris' },
+    { method:'E-Wallet',     icon:'📱', name:'E-Wallet',   sub:'GoPay · OVO · Dana · ShopeePay',  key:'ewallet' },
+  ];
+  const activeMethods = allMethods.filter(m => settings[m.key]);
+
+  let chargeHTML = '';
+  if (settings.chargeRoom) {
+    const bal = getDepositBalance(gpRoomNum);
+    const balLabel = bal > 0 ? `Saldo: ${fmtRp(bal)}` : 'Saldo: Rp 0';
+    const lowStyle = bal === 0 ? 'color:#EF4444;' : bal < 100000 ? 'color:#F59E0B;' : 'color:#10B981;';
+    chargeHTML = `<div class="gp-pay-card" data-method="Charge to Room" data-label="Tagih ke Kamar" onclick="gpSelectPay(this)" style="grid-column:span 2;"><div style="display:flex;align-items:center;gap:14px;"><div style="font-size:32px;">🛎️</div><div style="flex:1;"><div class="gp-pay-name" style="font-size:14px;">Tagih ke Kamar</div><div class="gp-pay-sub">Dibayar dari deposit kamar</div></div><div style="font-size:11px;font-weight:700;${lowStyle}">${balLabel}</div></div></div>`;
+  }
+
+  const activeKeys = activeMethods.map(m => m.method);
+  if (!activeKeys.includes(gpPayMethod) && !(settings.chargeRoom && gpPayMethod === 'Charge to Room')) {
+    gpPayMethod = activeMethods.length > 0 ? activeMethods[0].method : (settings.chargeRoom ? 'Charge to Room' : 'Cash');
+  }
+  document.getElementById('gpPayGrid').innerHTML = activeMethods.map(m => {
+    const isActive = m.method === gpPayMethod ? ' active' : '';
+    return `<div class="gp-pay-card${isActive}" data-method="${m.method}" onclick="gpSelectPay(this)"><div class="gp-pay-icon">${m.icon}</div><div class="gp-pay-name">${m.name}</div><div class="gp-pay-sub">${m.sub}</div></div>`;
+  }).join('') + chargeHTML;
+  // Render SVG logos into ewallet grid
+  document.querySelectorAll('.gp-ewallet-opt').forEach(c => {
+    const wrap = c.querySelector('.ew-logo-wrap');
+    if (wrap) wrap.innerHTML = gpEwLogo(c.dataset.ew, 36);
+  });
+  gpApplyPaySelection();
+}
+
+function gpSelectPay(el) {
+  gpPayMethod = el.dataset.method;
+  gpApplyPaySelection();
+  gpCheckDepositBalance();
+}
+
+function gpSelectEwallet(el) {
+  gpEwalletSub = el.dataset.ew;
+  document.querySelectorAll('.gp-ewallet-opt').forEach(c => {
+    const active = c.dataset.ew === gpEwalletSub;
+    c.style.border = active ? '2px solid var(--primary)' : '2px solid var(--border)';
+    c.style.background = active ? 'var(--primary-bg)' : 'var(--card)';
+    // Update logo icon inside the button
+    const logoDiv = c.querySelector('.ew-logo-wrap');
+    if (logoDiv) logoDiv.innerHTML = gpEwLogo(c.dataset.ew, 36);
+    const labelDiv = c.lastElementChild;
+    if (labelDiv) labelDiv.style.color = active ? 'var(--primary)' : 'var(--text-secondary)';
+  });
+  const ew = GP_EWALLET_DATA[gpEwalletSub];
+  document.getElementById('gpEwIcon').innerHTML = gpEwLogo(gpEwalletSub, 44);
+  document.getElementById('gpEwApp').textContent    = gpEwalletSub;
+  document.getElementById('gpEwNumber').textContent = ew.number;
+  document.getElementById('gpEwName').textContent   = 'a/n ' + ew.name;
+
+
+  // Update nominal label in checklist
+  const items = gpGetCartItemsList();
+  const { total } = calcOrderTotal(items);
+  const nomEl = document.getElementById('gpCheckNominal');
+  if (nomEl) nomEl.textContent = fmtRp(total);
+
+  // Reset proof on wallet switch
+  gpRemoveProof();
+  gpCheckTransferReady();
+}
+
+function gpApplyPaySelection() {
+  const isEwallet = gpPayMethod === 'E-Wallet';
+  const isCharge  = gpPayMethod === 'Charge to Room';
+  document.querySelectorAll('.gp-pay-card').forEach(c => c.classList.toggle('active', c.dataset.method === gpPayMethod));
+  document.getElementById('gpPayInfo').style.display = (isEwallet || isCharge) ? 'none' : 'flex';
+  document.getElementById('gpEwalletPanel').style.display = isEwallet ? 'block' : 'none';
+  let chargeInfoEl = document.getElementById('gpChargeRoomInfo');
+  if (!chargeInfoEl) {
+    chargeInfoEl = document.createElement('div');
+    chargeInfoEl.id = 'gpChargeRoomInfo';
+    chargeInfoEl.style.cssText = 'background:var(--accent-light);border:1px solid #C7F5E8;border-radius:var(--radius-sm);padding:12px 14px;display:flex;gap:10px;align-items:center;margin-bottom:16px;';
+    const payInfo = document.getElementById('gpPayInfo');
+    if (payInfo) payInfo.parentNode.insertBefore(chargeInfoEl, payInfo.nextSibling);
+  }
+  if (isCharge) {
+    const bal = getDepositBalance(gpRoomNum);
+    const items = gpGetCartItemsList();
+    const { total } = calcOrderTotal(items);
+    const balColor = bal >= total ? '#10B981' : '#EF4444';
+    chargeInfoEl.style.display = 'flex';
+    chargeInfoEl.innerHTML = `<div style="font-size:24px;">🛎️</div><div><div style="font-weight:700;font-size:13px;color:var(--accent);">Tagih ke Kamar ${gpRoomNum}</div><div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Saldo deposit: <strong style="color:${balColor};">${fmtRp(bal)}</strong></div></div>`;
+  } else { chargeInfoEl.style.display = 'none'; }
+  if (!isEwallet && !isCharge) {
+    const info = GP_PAY_INFO[gpPayMethod] || GP_PAY_INFO['Cash'];
+    document.getElementById('gpPayInfoIcon').textContent  = info.icon;
+    document.getElementById('gpPayInfoTitle').textContent = info.title;
+    document.getElementById('gpPayInfoDesc').textContent  = info.desc;
+  } else if (isEwallet) {
+    const opt = document.querySelector(`.gp-ewallet-opt[data-ew="${gpEwalletSub}"]`);
+    if (opt) gpSelectEwallet(opt);
+  }
+  const btn = document.getElementById('gpConfirmBtn');
+  if (isEwallet) {
+    btn.innerHTML = '✅ Saya Sudah Transfer — Kirim Pesanan';
+    btn.style.background = 'var(--accent)';
+    btn.disabled = true;
+    btn.style.opacity = '0.45';
+    const hint = document.getElementById('gpEwalletHint');
+    if (hint) hint.style.display = 'block';
+    gpCheckTransferReady();
+  } else if (isCharge) {
+    btn.innerHTML = '🛎️ Potong Deposit &amp; Kirim Pesanan';
+    btn.style.background = '';
+    btn.disabled = false; btn.style.opacity = '';
+    const hint = document.getElementById('gpEwalletHint');
+    if (hint) hint.style.display = 'none';
+  } else {
+    btn.innerHTML = '🛎️ Konfirmasi &amp; Kirim Pesanan';
+    btn.style.background = '';
+    btn.disabled = false; btn.style.opacity = '';
+    const hint = document.getElementById('gpEwalletHint');
+    if (hint) hint.style.display = 'none';
+  }
+}
+
+function gpCheckDepositBalance() {
+  const warn = document.getElementById('gpDepInsufficient');
+  const btn  = document.getElementById('gpConfirmBtn');
+  if (!warn) return;
+  if (gpPayMethod !== 'Charge to Room') {
+    warn.style.display = 'none';
+    btn.disabled = false; btn.style.opacity = '';
+    return;
+  }
+  const bal = getDepositBalance(gpRoomNum);
+  const items = gpGetCartItemsList();
+  const { total } = calcOrderTotal(items);
+  if (bal < total) {
+    const kurang = total - bal;
+    document.getElementById('gpDepInsufficientMsg').innerHTML =
+      `Saldo deposit Kamar <strong>${gpRoomNum}</strong>: <strong>${fmtRp(bal)}</strong> — kurang <strong>${fmtRp(kurang)}</strong>. Minta staff top-up.`;
+    warn.style.display = 'block';
+    btn.disabled = true; btn.style.opacity = '0.5';
+  } else {
+    warn.style.display = 'none';
+    btn.disabled = false; btn.style.opacity = '';
+  }
+}
+
+
+// ── PROOF UPLOAD ─────────────────────────────────────────────
+let gpProofDataUrl = null;
+
+function gpHandleProofUpload(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { showToast('Hanya file gambar yang diterima', 'error'); return; }
+  if (file.size > 5 * 1024 * 1024) { showToast('Ukuran file maksimal 5MB', 'error'); return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    gpProofDataUrl = e.target.result;
+    const img = document.getElementById('gpProofImg');
+    const preview = document.getElementById('gpProofPreview');
+    const uploadArea = document.getElementById('gpProofUploadArea');
+    const nameEl = document.getElementById('gpProofFileName');
+    if (img) img.src = gpProofDataUrl;
+    if (preview) preview.style.display = 'block';
+    if (uploadArea) uploadArea.style.display = 'none';
+    if (nameEl) nameEl.textContent = file.name;
+    const section = document.getElementById('gpProofSection');
+    if (section) { section.style.border = '2px solid var(--accent)'; section.style.background = 'var(--accent-light)'; }
+    gpCheckTransferReady();
+    showToast('✅ Bukti transfer berhasil diupload', 'success');
+  };
+  reader.readAsDataURL(file);
+}
+
+function gpRemoveProof() {
+  gpProofDataUrl = null;
+  const img = document.getElementById('gpProofImg');
+  const preview = document.getElementById('gpProofPreview');
+  const uploadArea = document.getElementById('gpProofUploadArea');
+  const fileInput = document.getElementById('gpProofFileInput');
+  const section = document.getElementById('gpProofSection');
+  if (img) img.src = '';
+  if (preview) preview.style.display = 'none';
+  if (uploadArea) uploadArea.style.display = 'block';
+  if (fileInput) fileInput.value = '';
+  if (section) { section.style.border = '2px dashed var(--border)'; section.style.background = 'var(--card)'; }
+  const chk = document.getElementById('gpTransferChecked');
+  if (chk) chk.checked = false;
+  gpCheckTransferReady();
+}
+
+function gpCheckTransferReady() {
+  if (gpPayMethod !== 'E-Wallet') return;
+  const checked = document.getElementById('gpTransferChecked')?.checked;
+  const hasProof = !!gpProofDataUrl;
+  const ready = checked && hasProof;
+  const btn = document.getElementById('gpConfirmBtn');
+  const hint = document.getElementById('gpEwalletHint');
+  if (btn) {
+    btn.disabled = !ready;
+    btn.style.opacity = ready ? '1' : '0.45';
+    btn.style.background = ready ? 'var(--accent)' : '';
+  }
+  if (hint) hint.style.display = ready ? 'none' : 'block';
+}
+
+function gpCopyNumber() {
+  const ew = GP_EWALLET_DATA[gpEwalletSub];
+  const raw = ew.number.replace(/-/g, '');
+  navigator.clipboard?.writeText(raw).then(() => {
+    const btn = document.getElementById('gpCopyBtn');
+    btn.textContent = '✅ Disalin!';
+    setTimeout(() => btn.textContent = '📋 Salin', 2000);
+  }).catch(() => showToast('Nomor: ' + ew.number, 'info'));
+}
+
+function gpCopyAmount() {
+  const items = gpGetCartItemsList();
+  const { total } = calcOrderTotal(items);
+  navigator.clipboard?.writeText(String(total)).then(() => showToast('Nominal ' + fmtRp(total) + ' disalin!', 'success'))
+    .catch(() => showToast('Nominal: ' + fmtRp(total), 'info'));
+}
+
+// ────────────────────────────────────────────────────────────
+// STEP 5: SUBMIT ORDER
+// ────────────────────────────────────────────────────────────
+function gpSubmitOrder() {
+  const items = gpGetCartItemsList();
+  if (!items.length) { showToast('Keranjang kosong!', 'error'); return; }
+
+  // Button loading state
+  const btn = document.getElementById('gpConfirmBtn');
+  const origHTML = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.innerHTML = '<span style="display:inline-block;width:16px;height:16px;border:2.5px solid rgba(255,255,255,0.4);border-top-color:white;border-radius:50%;animation:spin .7s linear infinite;margin-right:8px;vertical-align:middle;"></span>Mengirim...';
+    btn.disabled = true;
+    btn.style.opacity = '0.85';
+  }
+  // Add spin keyframes once
+  if (!document.getElementById('gp-spin-style')) {
+    const s = document.createElement('style');
+    s.id = 'gp-spin-style';
+    s.textContent = '@keyframes spin{to{transform:rotate(360deg)}}';
+    document.head.appendChild(s);
+  }
+
+  const id = _nextOrderId();
+  // For returning QR guests who skipped step 2, restore name from last order
+  if (!gpGuestName && window._gpQrScanCount >= 2 && gpRoomNum) {
+    const prevOrder = orders.find(o => String(o.room) === String(gpRoomNum) && o.guest);
+    if (prevOrder) { gpGuestName = prevOrder.guest; gpGuestEmail = prevOrder.guestEmail || ''; gpGuestPhone = prevOrder.guestPhone || ''; }
+  }
+  const guestName = gpGuestName || `Tamu ${gpRoomNum}`;
+  const note = document.getElementById('gpNote').value.trim();
+  const isEwallet = gpPayMethod === 'E-Wallet';
+  const isCharge  = gpPayMethod === 'Charge to Room';
+  const payLabel  = isEwallet ? `E-Wallet (${gpEwalletSub})` : gpPayMethod;
+  const { total } = calcOrderTotal(items);
+
+  if (isCharge) {
+    const bal = getDepositBalance(gpRoomNum);
+    if (bal < total) {
+      showToast(`Deposit tidak cukup! Saldo: ${fmtRp(bal)}`, 'error');
+      gpCheckDepositBalance();
+      if (btn) { btn.innerHTML = origHTML; btn.disabled = false; btn.style.opacity = ''; }
+      return;
+    }
+  }
+
+  // Small artificial delay for UX feel
+  setTimeout(() => {
+    const newOrder = {
+      id, status: isCharge ? 'done' : 'new',
+      type: 'Room Service',
+      room: gpRoomNum,
+      guest: guestName,
+      guestEmail: gpGuestEmail,
+      guestPhone: gpGuestPhone,
+      cashier: 'Guest Portal',
+      note,
+      createdAt: Date.now(),
+      items: [...items],
+      itemNotes: { ...gpItemNotes },
+      payment: isEwallet ? payLabel : (isCharge ? `Charge to Room (sisa: ${fmtRp(getDepositBalance(gpRoomNum) - total)})` : null),
+      proofImage: isEwallet ? (gpProofDataUrl || null) : null,
+      chargeOrder: isCharge ? true : false,   // FIX 6: audit trail for charge-to-room orders
+    };
+
+    if (isCharge) deductDeposit(gpRoomNum, total);
+
+    orders.unshift(newOrder);
+    saveOrders();
+    _fbSaveOrder(newOrder);
+    deductMenuStock(items);
+
+    // Populate success screen
+    const _gpSetEl   = (id, val) => { const e = document.getElementById(id); if (e) e.textContent = val; };
+    const _gpSetHtml = (id, val) => { const e = document.getElementById(id); if (e) e.innerHTML = val; };
+
+    _gpSetEl('gpSuccessTotal', fmtRp(total));
+    if (isEwallet) {
+      const ew = GP_EWALLET_DATA[gpEwalletSub];
+      _gpSetEl('gpSuccessPayTitle', '✅ Transfer dikonfirmasi');
+      _gpSetHtml('gpSuccessPayBody',
+        `Transfer <strong style="color:var(--primary);">${fmtRp(total)}</strong> via <strong>${gpEwalletSub}</strong> ke <strong>${ew ? ew.number : '-'}</strong>.<br>Staf akan memverifikasi dan mengantar pesanan ke <strong>Kamar ${gpRoomNum}</strong>.`);
+    } else if (isCharge) {
+      const newBal = getDepositBalance(gpRoomNum);
+      _gpSetEl('gpSuccessPayTitle', '✅ Deposit berhasil dipotong');
+      _gpSetHtml('gpSuccessPayBody',
+        `🛎️ Tagihan <strong style="color:var(--primary);">${fmtRp(total)}</strong> dipotong dari deposit Kamar <strong>${gpRoomNum}</strong>.<br>Sisa saldo: <strong>${fmtRp(newBal)}</strong>. Pesanan sedang diproses.`);
+    } else {
+      _gpSetEl('gpSuccessPayTitle', '✅ Konfirmasi pesanan diterima');
+      _gpSetHtml('gpSuccessPayBody',
+        `Staf kami akan mengantar ke <strong>Kamar ${gpRoomNum}</strong>.<br>Metode: <strong style="color:var(--primary);">${GP_PAY_INFO[gpPayMethod]?.icon || ''} ${GP_PAY_INFO[gpPayMethod]?.title || gpPayMethod}</strong>`);
+    }
+    _gpSetEl('gpSuccessRoom', 'Kamar ' + gpRoomNum);
+
+    document.getElementById('gpSuccessDetail').innerHTML = items.map(i => {
+      const menu = menuCatalog.find(m => m.id === i.id);
+      return `<div style="display:flex; justify-content:space-between; font-size:13px; padding:7px 0; border-bottom:1px solid var(--border-light);">
+        <span style="color:var(--text-secondary);">${menu ? menu.emoji : ''} ${i.qty}× ${i.name}</span>
+        <span style="font-weight:800;color:var(--text-primary);">${fmtRp(i.qty * i.price)}</span>
+      </div>`;
+    }).join('');
+
+    document.getElementById('gpCartFab').classList.remove('visible');
+    gpItemNotes = {};
+    gpProofDataUrl = null;
+    gpRemoveProof();
+
+    if (btn) { btn.innerHTML = origHTML; btn.disabled = false; btn.style.opacity = ''; }
+
+    window._gpResumed = false;
+    const aBtn = document.getElementById('gpOrderAnotherBtn');
+    if (aBtn) aBtn.innerHTML = '🍜 Pesan Lagi';
+
+    gpGoToStep(6);
+    gpStartProgressTracker(id);
+    gpScheduleFeedbackPopup(id);
+  }, 600);
+}
+
+function gpOrderAnother() {
+  window._gpResumed = false;
+  gpCartItems = {};
+  gpPayMethod = 'Cash';
+  gpEwalletSub = 'GoPay';
+  gpItemNotes = {};
+  gpProofDataUrl = null;
+  gpGoToStep(3);
+}
+
+// ────────────────────────────────────────────────────────────
+// PROGRESS TRACKER
+// ────────────────────────────────────────────────────────────
+function gpStartProgressTracker(orderId) {
+  if (_gpProgressInterval) { clearInterval(_gpProgressInterval); _gpProgressInterval = null; }
+  function _gpUpdateProgress() {
+    const o = orders.find(x => x.id === orderId);
+    if (!o) return;
+    const steps = { new:1, kitchen:2, ready:3, done:4 };
+    const currentStep = steps[o.status] || 1;
+    const dots = [document.getElementById('gpProg1'),document.getElementById('gpProg2'),document.getElementById('gpProg3'),document.getElementById('gpProg4')];
+    dots.forEach((d, i) => {
+      if (!d) return;
+      const dot = d.querySelector('.gp-prog-dot');
+      if (!dot) return;
+      if (i < currentStep - 1) { dot.style.background = 'var(--accent)'; }
+      else if (i === currentStep - 1) { dot.style.background = 'var(--primary)'; dot.style.boxShadow = '0 0 0 3px rgba(232,64,10,.2)'; }
+      else { dot.style.background = 'var(--border)'; dot.style.boxShadow = ''; }
+    });
+    if (o.status === 'done') {
+      clearInterval(_gpProgressInterval);
+      _gpProgressInterval = null;
+      if (!_pcfSubmittedOrders.has(orderId)) {
+        setTimeout(() => openPostCheckoutFeedback(orderId), 1800);
+      }
+    }
+  }
+  _gpUpdateProgress();
+  _gpProgressInterval = setInterval(_gpUpdateProgress, 5000);
+}
+
+// ────────────────────────────────────────────────────────────
+// REPEAT LAST ORDER / MENU RECOMMENDATION
+// ────────────────────────────────────────────────────────────
+function generateMenuRecommendation() {
+  const box = document.getElementById('gpRecommendBox');
+  if (!box) return;
+  const roomOrders = orders.filter(o => o.room === gpRoomNum && o.status === 'done' && o.items && o.items.length);
+  if (!roomOrders.length) { box.style.display = 'none'; return; }
+  const last = roomOrders[0];
+  const preview = last.items.slice(0,2).map(i => `${i.qty}× ${i.name}`).join(', ') + (last.items.length > 2 ? ` +${last.items.length-2} lagi` : '');
+  box.style.display = 'flex';
+  const descEl = box.querySelector('#gpRecommendDesc');
+  if (descEl) descEl.textContent = preview;
+}
+
+function gpRepeatLastOrder() {
+  const roomOrders = orders.filter(o => o.room === gpRoomNum && o.status === 'done' && o.items);
+  if (!roomOrders.length) { showToast('Belum ada riwayat pesanan untuk kamar ini', 'info'); return; }
+  const last = roomOrders[0];
+  gpCartItems = {};
+  gpItemNotes = {};
+  let skipped = 0;
+  last.items.forEach(i => {
+    if (!i.id) return;
+    // Skip items that are unavailable or out of stock
+    if (!isMenuAvailable(i.id)) { skipped++; return; }
+    const s = getStock(i.id);
+    if (s.limited && s.remain <= 0) { skipped++; return; }
+    const qty = s.limited ? Math.min(i.qty, s.remain) : i.qty;
+    if (qty > 0) gpCartItems[i.id] = qty;
+  });
+  if (!Object.keys(gpCartItems).length) {
+    showToast('Semua item dari pesanan terakhir tidak tersedia saat ini', 'error');
+    return;
+  }
+  gpGoToStep(4);
+  const msg = skipped > 0
+    ? `🔄 Item ditambahkan (${skipped} item tidak tersedia dilewati)`
+    : '🔄 Item dari pesanan terakhir ditambahkan!';
+  showToast(msg, skipped > 0 ? 'info' : 'success');
+}
+
+// ────────────────────────────────────────────────────────────
+// PROMO BANNER
+// ────────────────────────────────────────────────────────────
+function gpInitPromo() {
+  const hour = new Date().getHours();
+  const banner = document.getElementById('gpPromoBanner');
+  if (!banner) return;
+  if (hour >= 14 && hour < 17) {
+    document.getElementById('gpPromoTitle').textContent = '☕ Promo Happy Hour!';
+    document.getElementById('gpPromoDesc').textContent  = 'Beli 2 Es Kopi Susu gratis 1 Pisang Goreng (14:00–17:00)';
+    banner.style.display = 'block';
+  } else if (hour >= 11 && hour < 14) {
+    document.getElementById('gpPromoTitle').textContent = '🍽️ Promo Makan Siang!';
+    document.getElementById('gpPromoDesc').textContent  = 'Gratis Es Teh Manis untuk setiap pembelian makanan berat (11:00–14:00)';
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// INLINE RATING (Step 6)
+// ────────────────────────────────────────────────────────────
+function gpSetCatRating(cat, val) {
+  _gpCatRating[cat] = val;
+  document.querySelectorAll(`.gp-star-${cat}`).forEach(s => {
+    s.style.filter = parseInt(s.dataset.v) <= val ? 'none' : 'grayscale(1)';
+  });
+}
+
+function gpSubmitRating() {
+  const vals = Object.values(_gpCatRating).filter(v => v > 0);
+  if (!vals.length) { showToast('Berikan setidaknya 1 bintang', 'info'); return; }
+  const comment = (document.getElementById('gpFeedbackText')?.value || '').trim();
+  const avg = vals.reduce((s,v) => s+v, 0) / vals.length;
+  const entry = {
+    id: 'GP-' + Date.now(),
+    room: gpRoomNum, guest: gpGuestName || 'Tamu',
+    ratings: { ..._gpCatRating }, comment,
+    time: Date.now(), source: 'portal-inline',
+  };
+  try {
+    const existing = JSON.parse(localStorage.getItem('fp_guest_feedback') || '[]');
+    existing.unshift(entry);
+    localStorage.setItem('fp_guest_feedback', JSON.stringify(existing.slice(0, 200)));
+    if (window._fbDb && window._FB) {
+      window._FB.addDoc(window._FB.collection(window._fbDb, 'feedback'), { ...entry, createdAt: window._FB.serverTimestamp() }).catch(() => {});
+    }
+  } catch(e) {}
+  const ratingBox = document.getElementById('gpRatingBox');
+  if (ratingBox) ratingBox.innerHTML = `<div style="text-align:center;padding:20px 0;font-size:28px;">🎉</div><div style="text-align:center;font-weight:800;color:var(--accent);">Terima kasih atas feedback Anda!</div>`;
+  showToast('⭐ Feedback dikirim — terima kasih!', 'success');
+}
+
+// ────────────────────────────────────────────────────────────
+// DELAYED FEEDBACK POPUP
+// ────────────────────────────────────────────────────────────
+let _gpFbPopupTimer = null;
+let _gpFbRatings = { service:0, food:0, drink:0 };
+
+function gpScheduleFeedbackPopup(orderId) {
+  if (_gpFbPopupTimer) { clearTimeout(_gpFbPopupTimer); _gpFbPopupTimer = null; }
+  _gpFbPopupTimer = setTimeout(() => { if (gpCurrentStep === 6) _gpShowFeedbackPopup(orderId); }, 3600000); // 1 hour
+}
+window._gpCancelFeedbackTimer = function() { if (_gpFbPopupTimer) { clearTimeout(_gpFbPopupTimer); _gpFbPopupTimer = null; } };
+
+function _gpShowFeedbackPopup(orderId) {
+  const popup = document.getElementById('gpFeedbackPopup');
+  const inner = document.getElementById('gpFeedbackPopupInner');
+  if (!popup || !inner) return;
+  _gpFbRatings = { service:0, food:0, drink:0 };
+  document.querySelectorAll('.gpfb-star').forEach(s => s.style.filter = 'grayscale(1)');
+  const cmtEl = document.getElementById('gpFbComment'); if (cmtEl) cmtEl.value = '';
+  popup.style.display = 'block';
+  requestAnimationFrame(() => { inner.style.transform = 'translateY(0)'; });
+}
+
+function gpFbSetRating(cat, val) {
+  _gpFbRatings[cat] = val;
+  document.querySelectorAll(`.gpfb-${cat}`).forEach(s => {
+    s.style.filter = parseInt(s.dataset.v) <= val ? 'none' : 'grayscale(1)';
+  });
+}
+
+function gpDismissFeedbackPopup() {
+  const inner = document.getElementById('gpFeedbackPopupInner');
+  if (inner) inner.style.transform = 'translateY(100%)';
+  setTimeout(() => { const p = document.getElementById('gpFeedbackPopup'); if (p) p.style.display = 'none'; }, 450);
+}
+
+function gpSubmitFeedbackPopup() {
+  const vals = Object.values(_gpFbRatings).filter(v => v > 0);
+  if (!vals.length) { showToast('Berikan setidaknya 1 bintang 😊', 'info'); return; }
+  const comment = (document.getElementById('gpFbComment')?.value || '').trim();
+  const avg = vals.reduce((s,v) => s+v, 0) / vals.length;
+  const entry = {
+    id: 'GFB-' + Date.now(),
+    room: gpRoomNum, guest: gpGuestName || 'Tamu',
+    ratings: { ..._gpFbRatings }, comment,
+    time: Date.now(), source: 'popup-delayed',
+  };
+  try {
+    const existing = JSON.parse(localStorage.getItem('fp_guest_feedback') || '[]');
+    existing.unshift(entry);
+    localStorage.setItem('fp_guest_feedback', JSON.stringify(existing.slice(0, 200)));
+    if (window._fbDb && window._FB) {
+      window._FB.addDoc(window._FB.collection(window._fbDb, 'feedback'), { ...entry, createdAt: window._FB.serverTimestamp() }).catch(() => {});
+    }
+  } catch(e) {}
+  gpDismissFeedbackPopup();
+  showToast('⭐ Terima kasih atas feedback Anda!', 'success');
+}
+
+// ────────────────────────────────────────────────────────────
+// ORDER HISTORY
+// ────────────────────────────────────────────────────────────
+function openOrderHistory() {
+  document.getElementById('gohRoomLabel').textContent = `Kamar ${gpRoomNum} — riwayat pesanan Anda`;
+  renderOrderHistory();
+  document.getElementById('gpOrderHistory').classList.add('open');
+}
+
+function closeOrderHistory() {
+  document.getElementById('gpOrderHistory').classList.remove('open');
+}
+
+function renderOrderHistory() {
+  const roomOrders = orders.filter(o => String(o.room) === String(gpRoomNum));
+  const body = document.getElementById('gohBody');
+  if (!roomOrders.length) {
+    body.innerHTML = `<div class="goh-empty"><div class="goh-empty-icon">📭</div><div style="font-weight:700;font-size:15px;">Belum ada pesanan</div><div style="font-size:12px;margin-top:4px;">Pesanan dari kamar ini akan muncul di sini</div></div>`;
+    return;
+  }
+  const statusSteps = ['new','kitchen','ready','done'];
+  const stepLabels  = ['Diterima','Dapur','Siap','Selesai'];
+  body.innerHTML = roomOrders.map(o => {
+    const meta = {
+      new:       { label:'Baru',        cls:'goh-status-new' },
+      kitchen:   { label:'Di Dapur',    cls:'goh-status-kitchen' },
+      ready:     { label:'Siap Antar',  cls:'goh-status-ready' },
+      done:      { label:'Selesai',     cls:'goh-status-done' },
+      cancelled: { label:'Dibatalkan',  cls:'goh-status-cancelled' },
+    }[o.status] || { label:o.status, cls:'goh-status-new' };
+    const time = new Date(o.createdAt).toLocaleString('id-ID',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+    const { total } = calcOrderTotal(o.items);
+    const isLive = ['new','kitchen','ready'].includes(o.status);
+    const curStep = statusSteps.indexOf(o.status);
+    const progHtml = statusSteps.map((s, i) => {
+      const done   = i < curStep;
+      const active = i === curStep;
+      const cancel = o.status === 'cancelled';
+      const dotCls = cancel ? 'cancelled' : done ? 'done' : active ? 'active' : '';
+      const lineCls = (!cancel && done) ? 'done' : '';
+      return `<div class="goh-prog-step">
+        <div class="goh-prog-dot ${dotCls}">${done || cancel ? (cancel?'✕':'✓') : (active?'●':'')}</div>
+        ${i < statusSteps.length-1 ? `<div class="goh-prog-line ${lineCls}"></div>` : ''}
+        <div class="goh-prog-label ${dotCls}">${stepLabels[i]}</div>
+      </div>`;
+    }).join('');
+    return `<div class="goh-order-card">
+      <div class="goh-card-header">
+        <div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div class="goh-order-num">#${o.id}</div>
+            ${isLive ? `<div class="goh-live-badge"><div class="goh-live-dot"></div>LIVE</div>` : ''}
+          </div>
+          <div class="goh-order-time">${time}</div>
+        </div>
+        <div class="goh-status-badge ${meta.cls}">${meta.label}</div>
+      </div>
+      ${o.status !== 'cancelled' ? `<div class="goh-progress-bar">${progHtml}</div>` :
+        `<div style="background:#FEE2E2;padding:8px 14px;font-size:11px;color:var(--danger);font-weight:700;">❌ Pesanan dibatalkan</div>`}
+      <div class="goh-items">
+        ${o.items.map(i => `<div class="goh-item-row"><span class="goh-item-name">${i.qty}× ${i.name}</span><span class="goh-item-price">${fmtRp(i.qty * i.price)}</span></div>`).join('')}
+      </div>
+      <div class="goh-total-row">
+        <span>Total Tagihan</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          ${o.payment ? `<div class="goh-pay-chip">${o.payment}</div>` : ''}
+          <span>${fmtRp(total)}</span>
+        </div>
+      </div>
+      ${o.status === 'done' && !_pcfSubmittedOrders.has(o.id) ? `
+      <div style="padding:10px 14px;border-top:1px solid #F1F5F9;">
+        <button onclick="openPostCheckoutFeedback('${o.id}')" style="width:100%;padding:10px;background:var(--primary-bg);color:var(--primary);border:1.5px solid var(--primary);border-radius:10px;font-size:12px;font-weight:800;cursor:pointer;">⭐ Beri Penilaian Pesanan Ini</button>
+      </div>` : o.status === 'done' ? `<div style="padding:8px 14px;border-top:1px solid #F1F5F9;text-align:center;font-size:11px;color:var(--accent);font-weight:700;">✅ Feedback sudah dikirim — Terima kasih!</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ────────────────────────────────────────────────────────────
+// POST-CHECKOUT FEEDBACK
+// ────────────────────────────────────────────────────────────
+let _pcfRatings = { food:0, service:0, drink:0 };
+let _pcfOrderId = null;
+const _pcfSubmittedOrders = new Set();
+
+(function _loadPcfSubmitted() {
+  try { const saved = JSON.parse(localStorage.getItem('fp_pcf_submitted') || '[]'); saved.forEach(id => _pcfSubmittedOrders.add(id)); } catch(e) {}
+})();
+
+function openPostCheckoutFeedback(orderId) {
+  const o = orders.find(x => x.id === orderId);
+  if (!o) return;
+  _pcfOrderId = orderId;
+  _pcfRatings = { food:0, service:0, drink:0 };
+  const formEl  = document.getElementById('pcfFormState');
+  const thankEl = document.getElementById('pcfThankState');
+  if (formEl)  formEl.style.display  = 'block';
+  if (thankEl) thankEl.style.display = 'none';
+  document.querySelectorAll('.pcf-star').forEach(s => s.classList.remove('lit'));
+  const cmtEl = document.getElementById('pcfComment'); if (cmtEl) cmtEl.value = '';
+  const { total } = calcOrderTotal(o.items);
+  const itemsEl = document.getElementById('pcfOrderItems');
+  const totalEl = document.getElementById('pcfOrderTotal');
+  if (itemsEl) itemsEl.innerHTML = o.items.map(i => `${i.qty}× ${i.name}`).join('<br>');
+  if (totalEl) totalEl.textContent = 'Total: ' + fmtRp(total);
+  document.getElementById('postCheckoutFeedback').classList.add('open');
+  closeOrderHistory();
+}
+
+function _pcfWatchForDoneOrders() {
+  if (!gpRoomNum) return;
+  const roomDone = orders.filter(o =>
+    String(o.room) === String(gpRoomNum) &&
+    o.status === 'done' &&
+    !_pcfSubmittedOrders.has(o.id) &&
+    (Date.now() - o.createdAt) < 3600000
+  );
+  if (roomDone.length > 0 && gpCurrentStep === 6) {
+    setTimeout(() => openPostCheckoutFeedback(roomDone[0].id), 2000);
+  }
+}
+
+function pcfSetStar(cat, val) {
+  _pcfRatings[cat] = val;
+  const containerId = { food:'pcfStarsFood', service:'pcfStarsService', drink:'pcfStarsDrink' }[cat];
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.querySelectorAll('.pcf-star').forEach(s => {
+    s.classList.toggle('lit', parseInt(s.dataset.val) <= val);
+    s.style.filter = parseInt(s.dataset.val) <= val ? 'none' : 'grayscale(1)';
+    s.style.opacity = parseInt(s.dataset.val) <= val ? '1' : '0.4';
+  });
+}
+
+function pcfSubmit() {
+  const vals = Object.values(_pcfRatings).filter(v => v > 0);
+  if (!vals.length) { showToast('Berikan setidaknya 1 bintang 😊', 'info'); return; }
+  const comment = (document.getElementById('pcfComment')?.value || '').trim();
+  const o = _pcfOrderId ? orders.find(x => x.id === _pcfOrderId) : null;
+  const avg = vals.reduce((s,v) => s+v, 0) / vals.length;
+  const entry = {
+    id: 'PCF-' + Date.now(),
+    orderId: _pcfOrderId,
+    room: o?.room || gpRoomNum || '—',
+    guest: o?.guest || gpGuestName || 'Tamu',
+    ratings: { ..._pcfRatings },
+    comment, time: Date.now(), source: 'post-checkout',
+  };
+  try {
+    const existing = JSON.parse(localStorage.getItem('fp_guest_feedback') || '[]');
+    existing.unshift(entry);
+    localStorage.setItem('fp_guest_feedback', JSON.stringify(existing.slice(0, 200)));
+    if (window._fbDb && window._FB) {
+      window._FB.addDoc(window._FB.collection(window._fbDb, 'feedback'), { ...entry, createdAt: window._FB.serverTimestamp() }).catch(() => {});
+    }
+  } catch(e) {}
+  if (_pcfOrderId) {
+    _pcfSubmittedOrders.add(_pcfOrderId);
+    try { localStorage.setItem('fp_pcf_submitted', JSON.stringify([..._pcfSubmittedOrders])); } catch(e) {}
+  }
+  const avgRounded = Math.round(avg);
+  const thankStars = document.getElementById('pcfThankStars');
+  if (thankStars) thankStars.textContent = '⭐'.repeat(avgRounded) + '☆'.repeat(5 - avgRounded);
+  document.getElementById('pcfFormState').style.display = 'none';
+  document.getElementById('pcfThankState').style.display = 'block';
+  showToast('⭐ Terima kasih atas feedback Anda!', 'success');
+  setTimeout(pcfClose, 2500);
+}
+
+function pcfSkip() { pcfClose(); showToast('Feedback dilewati — terima kasih! 🙏', 'info'); }
+function pcfClose() { document.getElementById('postCheckoutFeedback').classList.remove('open'); _pcfOrderId = null; }
+
+// ────────────────────────────────────────────────────────────
+// RESET
+// ────────────────────────────────────────────────────────────
+function gpReset() {
+  gpRoomNum = ''; gpCartItems = {}; gpCurrentStep = 1;
+  gpCatFilter = 'Semua'; gpPayMethod = 'Cash'; gpItemNotes = {};
+  gpCurrentRating = 0; gpCurrentRoomStatus = 'occupied';
+  _gpCatRating = { service:0, food:0, drink:0 };
+  if (_gpProgressInterval) { clearInterval(_gpProgressInterval); _gpProgressInterval = null; }
+  if (typeof window._gpCancelFeedbackTimer === 'function') window._gpCancelFeedbackTimer();
+  const dEl = document.getElementById('gpRoomDisplay');
+  if (dEl) { dEl.textContent = '—'; dEl.className = 'gp-room-display'; }
+  const rb = document.getElementById('gpRoomBadge'); if (rb) rb.style.display = 'none';
+  const sb = document.getElementById('gpRoomStatusBadge'); if (sb) sb.style.display = 'none';
+  gpGuestName = ''; gpGuestEmail = ''; gpGuestPhone = '';
+  const n = document.getElementById('gpNote'); if (n) n.value = '';
+  const ni = document.getElementById('gpInputName'); if (ni) ni.value = '';
+  const ei = document.getElementById('gpInputEmail'); if (ei) ei.value = '';
+  const pi = document.getElementById('gpInputPhone'); if (pi) pi.value = '';
+  gpGoToStep(1);
+}
+
+// ────────────────────────────────────────────────────────────
+// FIREBASE INIT (called after auth ready)
+// ────────────────────────────────────────────────────────────
+window._gpInitFirestore = async function() {
+  if (!window._fbDb || !window._FB) return;
+
+  // Load settings dari Firestore
+  try {
+    const snap = await window._FB.getDocs(window._FB.collection(window._fbDb, 'settings'));
+    snap.forEach(d => {
+      const data = d.data();
+      if (d.id === 'taxConfig')         { localStorage.setItem(TAX_SETTINGS_KEY, JSON.stringify(data)); applyTaxSettings(); }
+      if (d.id === 'paymentSettings')   { localStorage.setItem(PAYMENT_SETTINGS_KEY, JSON.stringify(data)); }
+      if (d.id === 'menuAvailability' && data.data) { menuAvailability = data.data; localStorage.setItem(INV_KEY, JSON.stringify(data.data)); }
+      if (d.id === 'menuStock' && data.data)        { menuStockData = data.data; localStorage.setItem(INV_STOCK_KEY, JSON.stringify(data.data)); }
+      if (d.id === 'restaurant' && data.name)       {
+        const hn = document.getElementById('gpHotelName');
+        if (hn) hn.textContent = '🏨 ' + data.name;
+      }
+    });
+    showToast('🔥 Terhubung ke Firebase', 'success');
+  } catch(e) {
+    console.warn('[GP] Firestore settings load:', e);
+    showToast('⚠️ Gagal terhubung ke Firebase', 'error');
+  }
+
+  // SYNC v2: load local GP settings (aligned with Order_Taker)
+  if (typeof loadGpSettings === 'function') loadGpSettings();
+
+  // Listen to orders
+  _gpListenOrders();
+};
+
+// ────────────────────────────────────────────────────────────
+// AUTO-OPEN FROM QR (?room=XXX or #room=XXX)
+// ────────────────────────────────────────────────────────────
+(function checkQrDeepLink() {
+  function _extractRoom() {
+    let room = null;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('room') && /^[0-9]{3,4}$/.test(params.get('room'))) room = params.get('room');
+    if (!room) {
+      const pathMatch = window.location.pathname.match(/\/order\/([0-9]{3,4})(?:\/|$)/);
+      if (pathMatch) room = pathMatch[1];
+    }
+    if (!room) {
+      const hashStr = window.location.hash.replace(/^#/, '');
+      const hashParams = new URLSearchParams(hashStr);
+      if (hashParams.get('room') && /^[0-9]{3,4}$/.test(hashParams.get('room'))) room = hashParams.get('room');
+    }
+    return room;
+  }
+
+  function _doOpen(room) {
+    if (!room) return;
+    window._gpFromQR = true;
+    window._gpQrRoom = room;
+    if (!VALID_ROOMS.has(room)) VALID_ROOMS.add(room);
+
+    // ── QR SCAN COUNTER ────────────────────────────────────
+    // Hitung berapa kali tamu sudah scan QR kamar ini
+    const SCAN_KEY = 'fp_qr_scan_' + room;
+    const SCAN_EXPIRY_KEY = 'fp_qr_scan_exp_' + room;
+    let scanCount = 0;
+    try {
+      // Reset counter jika sudah lebih dari 12 jam (masa menginap habis)
+      const exp = parseInt(localStorage.getItem(SCAN_EXPIRY_KEY) || '0');
+      if (Date.now() > exp) {
+        localStorage.removeItem(SCAN_KEY);
+        localStorage.removeItem(SCAN_EXPIRY_KEY);
+      }
+      scanCount = parseInt(localStorage.getItem(SCAN_KEY) || '0');
+      scanCount = Math.min(scanCount + 1, 10); // cap di 10
+      localStorage.setItem(SCAN_KEY, String(scanCount));
+      // Set expiry 12 jam dari scan pertama
+      if (scanCount === 1) {
+        localStorage.setItem(SCAN_EXPIRY_KEY, String(Date.now() + 12 * 3600 * 1000));
+      }
+    } catch(e) { scanCount = 1; }
+    window._gpQrScanCount = scanCount;
+    // ──────────────────────────────────────────────────────
+
+    // Pre-fill room
+    gpRoomNum = room;
+    const el = document.getElementById('gpRoomDisplay');
+    if (el) { el.textContent = room; el.className = 'gp-room-display filled'; }
+
+    if (scanCount >= 2) {
+      // SCAN KE-2 HINGGA KE-10: Langsung tampilkan "Returning Guest" flow
+      setTimeout(() => _gpOpenReturningGuestFlow(room, scanCount), 500);
+    } else {
+      // SCAN PERTAMA: Full flow normal
+      setTimeout(() => gpConfirmRoom(), 500);
+    }
+  }
+
+  // ── RETURNING GUEST FLOW ─────────────────────────────────
+  // Dipanggil saat tamu scan QR ke-2 s/d ke-10
+  // Langsung tampil: status pesanan aktif (jika ada) + tombol pesan lagi
+  function _gpOpenReturningGuestFlow(room, scanCount) {
+    gpRoomNum = room;
+    gpCurrentRoomStatus = 'occupied';
+    try {
+      const saved = JSON.parse(localStorage.getItem('fp_room_status') || '{}');
+      if (saved[room]) gpCurrentRoomStatus = saved[room];
+    } catch(e) {}
+
+    // Cari pesanan aktif
+    const activeOrder = _gpGetActiveOrder(room);
+
+    if (activeOrder) {
+      // Ada pesanan sedang berjalan → tampilkan status + opsi tambah
+      _gpResumeOrder(activeOrder);
+      // Tampilkan banner returning guest
+      _gpShowReturningBanner(room, scanCount, 'active');
+    } else {
+      // Tidak ada pesanan aktif → langsung ke menu (skip step 1 & 2)
+      // Coba restore data tamu dari pesanan terakhir
+      const lastOrder = orders.find(o => String(o.room) === String(room));
+      if (lastOrder) {
+        gpGuestName  = lastOrder.guest  || gpGuestName  || '';
+        gpGuestEmail = lastOrder.guestEmail || gpGuestEmail || '';
+        gpGuestPhone = lastOrder.guestPhone || gpGuestPhone || '';
+      } else {
+        gpGuestName  = gpGuestName  || '';
+        gpGuestEmail = gpGuestEmail || '';
+        gpGuestPhone = gpGuestPhone || '';
+      }
+      gpCartItems = {};
+      gpItemNotes = {};
+      window._gpResumed = false;
+      gpGoToStep(3);
+      // Tampilkan banner returning guest
+      _gpShowReturningBanner(room, scanCount, 'menu');
+    }
+  }
+
+  // Banner tipis yang muncul di atas step konten untuk tamu yang kembali scan
+  function _gpShowReturningBanner(room, scanCount, mode) {
+    // Hapus banner lama jika ada
+    const old = document.getElementById('gpReturningBanner');
+    if (old) old.remove();
+
+    const roomOrders = orders.filter(o => String(o.room) === String(room));
+    const lastOrder  = roomOrders[0];
+    const hasHistory = roomOrders.length > 0;
+
+    const banner = document.createElement('div');
+    banner.id = 'gpReturningBanner';
+    banner.style.cssText = [
+      'position:fixed;top:0;left:0;right:0;z-index:9000;',
+      'background:linear-gradient(135deg,#1A1A2E 0%,#2D2D50 100%);',
+      'color:white;padding:10px 14px 10px;',
+      'display:flex;align-items:center;justify-content:space-between;gap:10px;',
+      'animation:gpBannerSlideDown .35s cubic-bezier(0.34,1.56,0.64,1);',
+      'box-shadow:0 4px 20px rgba(0,0,0,0.25);',
+    ].join('');
+
+    const scanLabel = scanCount <= 2 ? '👋 Selamat datang kembali'
+      : scanCount <= 5 ? `🔄 Scan ke-${scanCount}`
+      : `✨ Scan ke-${scanCount}`;
+
+    const subText = mode === 'active'
+      ? '📋 Pesanan Anda masih aktif — lihat status di bawah'
+      : hasHistory
+        ? `Pesan lagi untuk Kamar ${room}`
+        : `Kamar ${room} — pilih menu di bawah`;
+
+    banner.innerHTML = `
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:12px;font-weight:800;letter-spacing:.3px;">${scanLabel} — Kamar ${room}</div>
+        <div style="font-size:11px;opacity:.78;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${subText}</div>
+      </div>
+      <button onclick="document.getElementById('gpReturningBanner').remove()" style="background:rgba(255,255,255,.15);border:none;color:white;width:26px;height:26px;border-radius:50%;font-size:13px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;">✕</button>
+    `;
+
+    // Inject animasi sekali
+    if (!document.getElementById('gpBannerStyle')) {
+      const s = document.createElement('style');
+      s.id = 'gpBannerStyle';
+      s.textContent = '@keyframes gpBannerSlideDown{from{transform:translateY(-100%);opacity:0}to{transform:translateY(0);opacity:1}}';
+      document.head.appendChild(s);
+    }
+
+    document.body.appendChild(banner);
+
+    // Auto dismiss setelah 5 detik
+    setTimeout(() => { if (banner.parentNode) banner.style.cssText += 'transition:all .4s ease;opacity:0;transform:translateY(-100%)'; setTimeout(() => { if (banner.parentNode) banner.remove(); }, 400); }, 5000);
+  }
+
+  const room = _extractRoom();
+  if (room) {
+    window._gpFromQR = true;
+    window._gpQrRoom = room;
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        (window._gpAuthReady || Promise.resolve()).then(() => _doOpen(room));
+      });
+    } else {
+      (window._gpAuthReady || Promise.resolve()).then(() => _doOpen(room));
+    }
+  }
+
+  window.addEventListener('hashchange', () => { const r = _extractRoom(); if (r) _doOpen(r); });
+})();
+
+// ────────────────────────────────────────────────────────────
+// INIT
+// ────────────────────────────────────────────────────────────
+// Load orders from localStorage on start
+loadOrders();
+</script>
+</body>
+</html>

@@ -1,0 +1,2524 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Kitchen Monitor — Dafam Enkadeli</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp }
+    from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
+  import {
+    getFirestore, collection, doc, getDocs, addDoc, setDoc,
+    updateDoc, deleteDoc, onSnapshot, query, orderBy,
+    serverTimestamp, where, getDoc, enableNetwork, disableNetwork
+  } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
+  import { getAuth, signInAnonymously, onAuthStateChanged }
+    from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey:            "AIzaSyDDONfL7IDBcdA_yHiOJKboMKrV1orKq00",
+    authDomain:        "dservora.firebaseapp.com",
+    projectId:         "dservora",
+    storageBucket:     "dservora.firebasestorage.app",
+    messagingSenderId: "247710745842",
+    appId:             "1:247710745842:web:67517797f717860d87bc6b"
+  };
+
+  const _app  = initializeApp(firebaseConfig);
+  const _db   = getFirestore(_app);
+  const _auth = getAuth(_app);
+
+  window._fbDb = _db;
+  window._fbEnableNetwork  = () => enableNetwork(_db);
+  window._fbDisableNetwork = () => disableNetwork(_db);
+  window._FB = {
+    collection, doc, getDocs, addDoc, setDoc, updateDoc,
+    deleteDoc, onSnapshot, query, orderBy, serverTimestamp,
+    where, getDoc
+  };
+
+  // ── Robust auth with retry loop ──
+  let _authRetries = 0;
+  async function doSignIn() {
+    try {
+      await signInAnonymously(_auth);
+    } catch(e) {
+      console.warn('signInAnonymously failed:', e.code, e.message);
+      _authRetries++;
+      const delay = Math.min(2000 * _authRetries, 15000);
+      setTimeout(doSignIn, delay);
+    }
+  }
+
+  onAuthStateChanged(_auth, user => {
+    if (user) {
+      window._fbReady = true;
+      window._fbUid   = user.uid;
+      if (typeof window._kmInit === 'function') window._kmInit();
+    } else {
+      doSignIn();
+    }
+  });
+
+  // ── Network online/offline → reconnect Firestore ──
+  window.addEventListener('online', async () => {
+    try { await enableNetwork(_db); } catch(e) {}
+    if (window._fbReady && typeof window._kmReconnect === 'function') window._kmReconnect();
+  });
+  window.addEventListener('offline', async () => {
+    try { await disableNetwork(_db); } catch(e) {}
+  });
+</script>
+
+<style>
+/* ═══════════════════════════════════════════════
+   KITCHEN MONITOR — DARK INDUSTRIAL AESTHETIC
+   Font: DM Sans (display) + DM Mono (data)
+   Palette: Deep charcoal base, hot amber/orange
+   accents, green for done, red for urgent
+═══════════════════════════════════════════════ */
+:root {
+  --bg:          #F2F3F9;
+  --bg2:         #E8EAF4;
+  --surface:     #FFFFFF;
+  --surface2:    #F6F7FC;
+  --surface3:    #ECEEF6;
+  --border:      #E2E5F0;
+  --border-hi:   #CDD0E4;
+
+  --primary:        #E8400A;
+  --primary-light:  #FF6B35;
+  --primary-dark:   #C03200;
+  --primary-bg:     #FFF3EE;
+  --primary-glow:   rgba(232,64,10,0.18);
+  --primary-dim:    rgba(232,64,10,0.08);
+  --primary-border: rgba(232,64,10,0.20);
+
+  --accent:        #00A86B;
+  --accent-light:  rgba(0,168,107,0.10);
+  --warning:       #D97706;
+  --warning-light: rgba(217,119,6,0.10);
+  --danger:        #DC2626;
+  --danger-light:  rgba(220,38,38,0.09);
+  --info:          #2563EB;
+  --info-light:    rgba(37,99,235,0.10);
+  --purple:        #7C3AED;
+  --purple-light:  rgba(124,58,237,0.09);
+
+  --new-col:     #E8400A;
+  --new-dim:     rgba(232,64,10,0.08);
+  --kitchen-col: #2563EB;
+  --kitchen-dim: rgba(37,99,235,0.08);
+  --ready-col:   #00A86B;
+  --ready-dim:   rgba(0,168,107,0.08);
+
+  /* Legacy aliases for compatibility */
+  --amber:       #E8400A;
+  --amber-light: #FF6B35;
+  --amber-glow:  rgba(232,64,10,0.18);
+  --amber-dim:   rgba(232,64,10,0.08);
+  --new-glow:    rgba(232,64,10,0.18);
+  --kitchen-glow:rgba(37,99,235,0.16);
+  --ready-glow:  rgba(0,168,107,0.16);
+  --urgent-col:  #DC2626;
+  --urgent-glow: rgba(220,38,38,0.18);
+  --portal-col:  #7C3AED;
+  --portal-dim:  rgba(124,58,237,0.09);
+
+  --text:  #0F1124;
+  --text2: #4A4D6A;
+  --text3: #9496AF;
+  --text-primary:   #0F1124;
+  --text-secondary: #4A4D6A;
+  --text-muted:     #9496AF;
+
+  --mono:  'JetBrains Mono', monospace;
+  --sans:  'Outfit', system-ui, sans-serif;
+  --font-display: 'Outfit', system-ui, sans-serif;
+  --font-body:    'Outfit', system-ui, sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+
+  --r:    18px; --r-sm: 12px; --r-xs: 8px;
+  --radius:    18px; --radius-sm: 12px; --radius-xs: 8px;
+  --shadow:      0 4px 24px rgba(15,17,36,0.08), 0 1px 3px rgba(15,17,36,0.05);
+  --shadow-card: 0 2px 12px rgba(15,17,36,0.06), 0 1px 2px rgba(15,17,36,0.03);
+  --shadow-sm:   0 1px 4px  rgba(15,17,36,0.05);
+  --shadow-up:   0 -4px 16px rgba(15,17,36,0.06);
+  --shadow-lg:   0 8px 32px rgba(15,17,36,0.10);
+  --shadow-float:0 20px 60px rgba(15,17,36,0.18), 0 4px 12px rgba(15,17,36,0.08);
+  --shadow-gold: 0 2px 8px rgba(232,64,10,0.22);
+  --transition:  all 0.16s cubic-bezier(.4,0,.2,1);
+  --spring:      all 0.24s cubic-bezier(.34,1.56,.64,1);
+  --transition-spring: all 0.24s cubic-bezier(.34,1.56,.64,1);
+
+  --nav-h:  66px;
+  --hdr-h:  60px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+
+  --fs-base: 14px;
+  --fs-sm:   11.5px;
+  --fs-xs:   9.5px;
+  --card-p:  16px;
+
+  /* Portal/Order Taker compat */
+  --card:        #FFFFFF;
+  --card-raised: #FFFFFF;
+  --input-bg:    #FFFFFF;
+  --border-light:#E2E5F0;
+  --border-glass:#E2E5F0;
+  --gold-100: #FFF3EE;
+  --gold-200: #FFB89A;
+  --gold-300: #E8400A;
+  --gold-400: #C03200;
+  --gold-500: #8A2200;
+  --gold-glow: rgba(232,64,10,0.10);
+  --gold-border: rgba(232,64,10,0.15);
+}
+
+/* ═══════════ DARK MODE ═══════════ */
+[data-theme="dark"] {
+  --bg:#080810; --bg2:#0D0D18; --surface:#111121; --surface2:#171728; --surface3:#1E1E32;
+  --border:#202038; --border-hi:#2C2C48;
+  --primary:#FF5A22; --primary-light:#FF7A45; --primary-dark:#E8400A;
+  --primary-bg:rgba(232,64,10,.12); --primary-glow:rgba(255,90,34,.20);
+  --primary-dim:rgba(255,90,34,.09); --primary-border:rgba(255,90,34,.22);
+  --accent:#00C97F; --accent-light:rgba(0,201,127,.10);
+  --warning:#F59E0B; --warning-light:rgba(245,158,11,.10);
+  --danger:#EF4444; --danger-light:rgba(239,68,68,.10);
+  --info:#3B82F6; --info-light:rgba(59,130,246,.10);
+  --purple:#8B5CF6; --purple-light:rgba(139,92,246,.10);
+  --new-col:#FF5A22; --new-dim:rgba(255,90,34,.10);
+  --kitchen-col:#3B82F6; --kitchen-dim:rgba(59,130,246,.10);
+  --ready-col:#00C97F; --ready-dim:rgba(0,201,127,.10);
+
+  /* Legacy aliases */
+  --amber:#FF5A22; --amber-light:#FF7A45;
+  --amber-glow:rgba(255,90,34,.20); --amber-dim:rgba(255,90,34,.10);
+  --new-glow:rgba(255,90,34,.22); --kitchen-glow:rgba(59,130,246,.18);
+  --ready-glow:rgba(0,201,127,.18); --urgent-col:#EF4444;
+  --urgent-glow:rgba(239,68,68,.22); --portal-col:#8B5CF6;
+  --portal-dim:rgba(139,92,246,.12);
+
+  --text:#EEEEF8; --text2:#8888AA; --text3:#454560;
+  --text-primary:#EEEEF8; --text-secondary:#8888AA; --text-muted:#454560;
+
+  --shadow:0 4px 24px rgba(0,0,0,.50), 0 1px 3px rgba(0,0,0,.30);
+  --shadow-card:0 2px 12px rgba(0,0,0,.40); --shadow-sm:0 1px 4px rgba(0,0,0,.25);
+  --shadow-float:0 20px 60px rgba(0,0,0,.70), 0 4px 12px rgba(0,0,0,.40);
+  --shadow-lg:0 8px 32px rgba(0,0,0,.50);
+  --card:#111121; --card-raised:#171728;
+  --input-bg:#171728; --border-light:#202038; --border-glass:#202038;
+}
+
+[data-theme="dark"] .km-card { background: #1E1E2E; border-color: var(--border); }
+[data-theme="dark"] .km-card-header { background: #16161F; }
+[data-theme="dark"] .km-card-footer { background: #16161F; }
+[data-theme="dark"] .km-card-total  { border-top-color: var(--border); }
+[data-theme="dark"] .km-confirm-box { background: #1A1A26; }
+[data-theme="dark"] .km-toast       { background: #1A1A26; }
+[data-theme="dark"] .km-alert       { background: #1A1A26; }
+[data-theme="dark"] #kmLoader       { background: #0E0E14; }
+[data-theme="dark"] .km-column.col-new    .km-col-header { background: #1A0F0A; }
+[data-theme="dark"] .km-column.col-kitchen .km-col-header { background: #0A0F1A; }
+[data-theme="dark"] .km-column.col-ready   .km-col-header { background: #0A1A12; }
+[data-theme="dark"] .km-bottom-nav { background: #1A1A26; border-top-color: var(--border); }
+[data-theme="dark"] .km-settings-panel { background: #1A1A26; border-color: var(--border); }
+[data-theme="dark"] .km-settings-section { background: #13131C; border-color: var(--border); }
+[data-theme="dark"] .km-settings-row { border-bottom-color: #1F1F2E; }
+[data-theme="dark"] .km-settings-row:last-child { border-bottom: none; }
+[data-theme="dark"] .km-seg-btn { background: #1F1F2E; color: var(--text2); }
+[data-theme="dark"] .km-seg-btn.active { background: var(--surface2); color: var(--text); }
+[data-theme="dark"] .km-range-track { background: #2A2A3E; }
+[data-theme="dark"] .km-card-note { background: rgba(255,200,50,0.05); border-color: rgba(255,200,50,0.15); color: #D4A040; }
+[data-theme="dark"] .km-confirm-cancel { background: #1F1F2E; border-color: var(--border); }
+[data-theme="dark"] .km-idle-overlay { background: #0E0E14; }
+
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+html, body {
+  height: 100%; overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* No noise overlay — light theme */
+
+/* ═══════════ LAYOUT ═══════════ */
+.km-app {
+  display: grid;
+  grid-template-rows: 56px auto 1fr;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ═══════════ TOP BAR ═══════════ */
+.km-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 4px rgba(20,20,43,0.05);
+  z-index: 50;
+  position: relative;
+  flex-shrink: 0;
+}
+.km-topbar::after {
+  content:'';
+  position:absolute; bottom:0; left:0; right:0; height:2px;
+  background: linear-gradient(90deg, transparent, var(--amber), transparent);
+  opacity: 0.18;
+}
+
+.km-brand {
+  display: flex; align-items: center; gap: 10px;
+}
+.km-brand-icon {
+  width: 36px; height: 36px; border-radius: 10px;
+  background: var(--amber);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
+  box-shadow: 0 2px 8px var(--amber-glow);
+}
+.km-brand-name {
+  font-size: 16px; font-weight: 800; color: var(--text); letter-spacing: -0.3px;
+}
+.km-brand-sub {
+  font-size: 11px; color: var(--text3); font-family: var(--mono); margin-top: 1px;
+}
+
+.km-topbar-center {
+  display: flex; align-items: center; gap: 10px;
+}
+
+/* Clock is now in sub-bar — hide from topbar */
+.km-clock { display: none; }
+.km-date  { display: none; }
+
+.km-topbar-right {
+  display: flex; align-items: center; gap: 8px;
+}
+
+.km-conn-badge {
+  display: flex; align-items: center; gap: 5px;
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  padding: 4px 10px; border-radius: 20px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text3);
+  transition: all .3s;
+}
+.km-conn-badge.connected {
+  border-color: rgba(0,179,122,0.3);
+  background: rgba(0,179,122,0.08);
+  color: var(--ready-col);
+}
+.km-conn-badge.connecting {
+  border-color: rgba(232,64,10,0.25);
+  background: rgba(232,64,10,0.07);
+  color: var(--amber);
+}
+.km-conn-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.km-conn-badge.connected .km-conn-dot {
+  animation: livePulse 1.6s ease-in-out infinite;
+}
+
+/* Filter pill buttons */
+.km-filter-btn {
+  font-family: var(--sans); font-size: 11px; font-weight: 800;
+  padding: 5px 12px; border-radius: 20px; cursor: pointer;
+  background: var(--bg); color: var(--text2);
+  border: 1px solid var(--border);
+  transition: all .18s cubic-bezier(.4,0,.2,1);
+  display: flex; align-items: center; gap: 5px;
+}
+.km-filter-btn.active-new     { background: var(--new-dim);     color: var(--new-col);     border-color: rgba(255,79,0,0.3); }
+.km-filter-btn.active-kitchen { background: var(--kitchen-dim); color: var(--kitchen-col); border-color: rgba(47,155,255,0.3); }
+.km-filter-btn.active-ready   { background: var(--ready-dim);   color: var(--ready-col);   border-color: rgba(0,200,150,0.3); }
+.km-filter-btn.active-all     { background: var(--amber-dim);   color: var(--amber);        border-color: rgba(255,140,0,0.3); }
+.km-count-pill {
+  font-family: var(--mono); font-size: 10px; font-weight: 700;
+  background: rgba(20,20,43,0.08);
+  border-radius: 10px; padding: 0 5px; min-width: 18px;
+  text-align: center; line-height: 16px; display: inline-block;
+}
+
+/* ═══════════ COLUMNS LAYOUT ═══════════ */
+.km-board {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  overflow: hidden;
+  height: 100%;
+}
+
+.km-column {
+  display: flex; flex-direction: column;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  position: relative;
+  background: var(--bg2);
+}
+.km-column:last-child { border-right: none; }
+
+/* Column header */
+.km-col-header {
+  padding: 14px 16px 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  position: relative;
+}
+.km-col-header-left {
+  display: flex; align-items: center; gap: 8px;
+}
+.km-col-dot {
+  width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+}
+.km-col-title {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+.km-col-count {
+  font-family: var(--mono);
+  font-size: 22px; font-weight: 800;
+  line-height: 1;
+}
+
+/* Column color themes */
+.km-column.col-new    .km-col-dot { background: var(--new-col); box-shadow: 0 0 5px var(--new-glow); }
+.km-column.col-new    .km-col-title { color: var(--new-col); }
+.km-column.col-new    .km-col-count { color: var(--new-col); }
+.km-column.col-new    .km-col-header { background: #FFF3EE; border-bottom-color: rgba(232,64,10,0.12); }
+.km-column.col-new    .km-col-header::after { background: var(--new-col); }
+
+.km-column.col-kitchen .km-col-dot { background: var(--kitchen-col); box-shadow: 0 0 5px var(--kitchen-glow); animation: livePulse 1.8s ease-in-out infinite; }
+.km-column.col-kitchen .km-col-title { color: var(--kitchen-col); }
+.km-column.col-kitchen .km-col-count { color: var(--kitchen-col); }
+.km-column.col-kitchen .km-col-header { background: #EFF5FF; border-bottom-color: rgba(47,126,232,0.12); }
+.km-column.col-kitchen .km-col-header::after { background: var(--kitchen-col); }
+
+.km-column.col-ready   .km-col-dot { background: var(--ready-col); box-shadow: 0 0 5px var(--ready-glow); }
+.km-column.col-ready   .km-col-title { color: var(--ready-col); }
+.km-column.col-ready   .km-col-count { color: var(--ready-col); }
+.km-column.col-ready   .km-col-header { background: #E8F9F3; border-bottom-color: rgba(0,179,122,0.12); }
+.km-column.col-ready   .km-col-header::after { background: var(--ready-col); }
+
+.km-col-header::after {
+  content: '';
+  position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+  opacity: 0.5;
+}
+
+/* ═══════════ ORDER CARDS ═══════════ */
+.km-orders-scroll {
+  flex: 1; overflow-y: auto; padding: 12px 10px 12px;
+  display: flex; flex-direction: column; gap: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-hi) transparent;
+}
+.km-orders-scroll::-webkit-scrollbar { width: 3px; }
+.km-orders-scroll::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 3px; }
+
+.km-empty {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 40px 20px; text-align: center;
+  color: var(--text3);
+}
+.km-empty-icon { font-size: 40px; margin-bottom: 12px; opacity: 0.4; }
+.km-empty-text { font-size: 12px; font-weight: 700; color: var(--text3); line-height: 1.7; }
+
+/* Order Card */
+.km-card {
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  transition: transform .2s, box-shadow .2s;
+  position: relative;
+  box-shadow: var(--shadow-card);
+  animation: cardSlideIn .32s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes cardSlideIn {
+  from { opacity:0; transform: translateY(14px) scale(0.97); }
+  to   { opacity:1; transform: translateY(0) scale(1); }
+}
+.km-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+
+/* Urgency indicator stripe on left edge */
+.km-card::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  border-radius: 3px 0 0 3px;
+}
+.km-card.urgent::before  { background: var(--urgent-col); box-shadow: 0 0 6px rgba(224,49,49,0.3); }
+.km-card.warning::before { background: #E9960A; }
+.km-card.normal::before  { background: var(--border); }
+
+/* Portal badge glow */
+.km-card.portal-order { border-color: rgba(124,92,191,0.2); }
+.km-card.portal-order::after {
+  content: '';
+  position: absolute; inset: 0; border-radius: var(--r);
+  background: linear-gradient(135deg, rgba(124,92,191,0.03), transparent);
+  pointer-events: none;
+}
+
+.km-card-header {
+  padding: 10px 12px 8px 14px;
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.km-card-room {
+  font-family: var(--mono); font-size: 20px; font-weight: 800;
+  color: var(--text); letter-spacing: -0.3px; line-height: 1;
+}
+.km-card-room-label {
+  font-size: 9px; color: var(--text3); font-weight: 700;
+  text-transform: uppercase; letter-spacing: .8px; margin-top: 2px;
+  font-family: var(--mono);
+}
+.km-card-meta {
+  text-align: right;
+}
+.km-card-id {
+  font-family: var(--mono); font-size: 10px; color: var(--text3); font-weight: 600;
+}
+
+.km-card-badges {
+  display: flex; align-items: center; gap: 4px; margin-top: 3px;
+  flex-wrap: wrap; justify-content: flex-end;
+}
+
+/* Timer chip */
+.km-timer {
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  padding: 3px 7px; border-radius: 6px;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.km-timer.ok      { background: rgba(0,179,122,0.10); color: var(--ready-col); border: 1px solid rgba(0,179,122,0.2); }
+.km-timer.warn    { background: rgba(232,64,10,0.08);  color: var(--amber); border: 1px solid rgba(232,64,10,0.18); }
+.km-timer.urgent  { background: rgba(224,49,49,0.10);  color: var(--urgent-col); border: 1px solid rgba(224,49,49,0.2); animation: urgentFlash 1.2s ease-in-out infinite; }
+@keyframes urgentFlash { 0%,100%{opacity:1} 50%{opacity:0.55} }
+
+/* Source badge */
+.km-source-badge {
+  font-size: 9px; font-weight: 800; padding: 2px 7px;
+  border-radius: 20px; letter-spacing: .3px;
+  text-transform: uppercase;
+}
+.km-source-portal { background: rgba(124,92,191,0.08); color: var(--portal-col); border: 1px solid rgba(124,92,191,0.2); }
+.km-source-staff  { background: var(--surface2); color: var(--text3); border: 1px solid var(--border); }
+
+/* Guest name */
+.km-card-guest {
+  padding: 7px 12px 0 14px;
+  font-size: 11px; font-weight: 700; color: var(--text2);
+  display: flex; align-items: center; gap: 5px;
+  font-family: var(--mono);
+}
+
+/* Items list */
+.km-card-items {
+  padding: 6px 12px 10px 14px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.km-item-row {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px;
+}
+.km-item-qty {
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  color: var(--new-col); min-width: 26px; flex-shrink: 0;
+}
+.km-item-name {
+  font-size: 13px; font-weight: 600; color: var(--text); flex: 1;
+  line-height: 1.35;
+}
+.km-item-price {
+  font-family: var(--mono); font-size: 11px; color: var(--text3);
+  font-weight: 500; flex-shrink: 0;
+}
+
+/* Note */
+.km-card-note {
+  margin: 0 12px 10px 14px;
+  background: rgba(233,150,10,0.06);
+  border: 1px solid rgba(233,150,10,0.18);
+  border-radius: var(--r-sm);
+  padding: 7px 10px;
+  font-size: 11px; color: #A06800; line-height: 1.45;
+}
+
+/* Card footer — action buttons */
+.km-card-footer {
+  padding: 8px 10px;
+  border-top: 1px solid var(--border);
+  display: flex; gap: 6px;
+  background: var(--bg);
+}
+.km-action-btn {
+  flex: 1; padding: 8px 4px; border-radius: var(--r-sm);
+  font-family: var(--sans); font-size: 11px; font-weight: 800;
+  border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  transition: all .16s;
+  letter-spacing: 0.2px;
+}
+.km-action-btn:active { transform: scale(0.94); }
+.km-btn-kitchen {
+  background: rgba(47,126,232,0.09);
+  color: var(--kitchen-col);
+  border: 1px solid rgba(47,126,232,0.2);
+}
+.km-btn-kitchen:hover { background: rgba(47,126,232,0.14); }
+
+.km-btn-ready {
+  background: rgba(0,179,122,0.09);
+  color: var(--ready-col);
+  border: 1px solid rgba(0,179,122,0.2);
+}
+.km-btn-ready:hover { background: rgba(0,179,122,0.14); }
+
+.km-btn-done {
+  background: var(--bg);
+  color: var(--text2);
+  border: 1px solid var(--border);
+}
+.km-btn-done:hover { background: var(--border); color: var(--text); }
+
+.km-btn-cancel {
+  flex: 0 0 auto; width: 34px;
+  background: rgba(224,49,49,0.07);
+  color: var(--urgent-col);
+  border: 1px solid rgba(224,49,49,0.18);
+  font-size: 13px;
+}
+.km-btn-cancel:hover { background: rgba(224,49,49,0.13); }
+
+/* Total row */
+.km-card-total {
+  padding: 6px 12px 10px 14px;
+  font-family: var(--mono); font-size: 12px; font-weight: 700;
+  color: var(--text3);
+  display: flex; justify-content: space-between;
+  border-top: 1px solid var(--border);
+}
+.km-card-total span:last-child { color: var(--new-col); font-weight: 800; }
+
+/* ═══════════ STATS STRIP ═══════════ */
+.km-stats-row {
+  display: flex; gap: 6px; padding: 0 20px 0 0;
+}
+.km-stat {
+  font-family: var(--mono); font-size: 11px; font-weight: 600;
+  display: flex; align-items: center; gap: 4px; color: var(--text2);
+  padding: 4px 9px; border-radius: 8px;
+  background: var(--bg); border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+}
+
+/* ═══════════ ALERT BANNER ═══════════ */
+#kmAlertBanner {
+  position: fixed; top: 56px; left: 0; right: 0; z-index: 800;
+  pointer-events: none;
+  padding: 0 12px 8px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.km-alert {
+  pointer-events: auto;
+  background: #FFFFFF;
+  border: 1.5px solid var(--new-col);
+  border-radius: var(--r);
+  padding: 12px 14px;
+  display: flex; align-items: center; gap: 12px;
+  box-shadow: 0 6px 24px rgba(232,64,10,0.14), 0 2px 8px rgba(20,20,43,0.08);
+  animation: alertIn .35s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes alertIn { from{transform:translateY(-20px) scale(0.95);opacity:0} to{transform:translateY(0) scale(1);opacity:1} }
+
+.km-alert-ring {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--new-col); flex-shrink: 0;
+  animation: urgentFlash 0.9s ease-in-out infinite;
+  box-shadow: 0 0 10px var(--new-col);
+}
+.km-alert-body { flex: 1; }
+.km-alert-title { font-size: 12px; font-weight: 800; color: var(--new-col); letter-spacing: .5px; }
+.km-alert-sub   { font-size: 11px; color: var(--text2); margin-top: 2px; }
+.km-alert-close {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text2);
+  width: 26px; height: 26px; border-radius: 50%; font-size: 11px;
+  cursor: pointer; flex-shrink: 0; display: flex; align-items:center; justify-content:center;
+}
+
+/* ═══════════ CONFIRM OVERLAY ═══════════ */
+#kmConfirmOverlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(20,20,43,0.55); backdrop-filter: blur(6px);
+  z-index: 9000; align-items: center; justify-content: center; padding: 20px;
+}
+#kmConfirmOverlay.open { display: flex; }
+.km-confirm-box {
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  border-radius: 20px; padding: 28px 22px;
+  width: 100%; max-width: 320px; text-align: center;
+  animation: cardSlideIn .25s ease;
+  box-shadow: var(--shadow);
+  position: relative; overflow: hidden;
+}
+.km-confirm-box::before {
+  content: ''; position: absolute; top:0; left:0; right:0; height:3px;
+  background: linear-gradient(90deg, transparent, var(--amber), transparent);
+  opacity: 0.5;
+}
+.km-confirm-icon { font-size: 36px; margin-bottom: 10px; }
+.km-confirm-title { font-size: 18px; font-weight: 800; color: var(--text); margin-bottom: 6px; }
+.km-confirm-body  { font-size: 13px; color: var(--text2); line-height: 1.6; margin-bottom: 22px; }
+.km-confirm-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.km-confirm-btn {
+  padding: 12px; border-radius: 12px; border: none; cursor: pointer;
+  font-family: var(--sans); font-size: 13px; font-weight: 800;
+  transition: all .16s;
+}
+.km-confirm-btn:active { transform: scale(0.96); }
+.km-confirm-cancel { background: var(--bg); color: var(--text2); border: 1.5px solid var(--border); }
+.km-confirm-ok     { background: var(--new-col); color: white; box-shadow: 0 2px 8px var(--new-glow); }
+
+/* ═══════════ TOAST ═══════════ */
+.km-toast-container {
+  position: fixed; bottom: 20px; left: 14px; right: 14px;
+  z-index: 9500; display: flex; flex-direction: column; gap: 8px;
+  pointer-events: none;
+}
+.km-toast {
+  background: #FFFFFF; color: var(--text);
+  padding: 12px 16px; border-radius: 12px;
+  font-size: 13px; font-weight: 800;
+  display: flex; gap: 10px; align-items: center;
+  box-shadow: var(--shadow), 0 0 0 1px var(--border);
+  animation: cardSlideIn .28s cubic-bezier(.4,0,.2,1); pointer-events: auto;
+  font-family: var(--sans);
+}
+.km-toast.success { border-left: 3px solid var(--ready-col); }
+.km-toast.info    { border-left: 3px solid var(--kitchen-col); }
+.km-toast.error   { border-left: 3px solid var(--urgent-col); }
+
+/* ═══════════ LOADING SCREEN ═══════════ */
+#kmLoader {
+  position: fixed; inset: 0; background: #FFFFFF;
+  z-index: 8000; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px;
+}
+.km-loader-logo {
+  width: 64px; height: 64px; border-radius: 16px;
+  background: var(--amber); display: flex; align-items: center;
+  justify-content: center; font-size: 34px;
+  box-shadow: 0 4px 16px var(--amber-glow);
+  animation: iconBounce .6s cubic-bezier(0.34,1.56,0.64,1);
+}
+@keyframes iconBounce { from{transform:scale(0.5);opacity:0} to{transform:scale(1);opacity:1} }
+.km-loader-title { font-size: 22px; font-weight: 800; color: var(--text); letter-spacing: -0.3px; }
+.km-loader-sub   { font-size: 12px; color: var(--text3); font-family: var(--mono); }
+.km-loader-bar   { width: 140px; height: 3px; background: var(--bg2); border-radius: 3px; overflow: hidden; }
+.km-loader-fill  { height: 100%; background: var(--amber); border-radius: 3px; animation: loaderFill 1.8s ease-in-out infinite; }
+@keyframes loaderFill { 0%{width:0%} 60%{width:100%} 100%{width:100%} }
+
+/* ═══════════ ANIMATIONS ═══════════ */
+@keyframes livePulse {
+  0%,100% { opacity:1; transform:scale(1); }
+  50%      { opacity:.5; transform:scale(.8); }
+}
+
+/* ── BOTTOM TAB NAV base (hidden on desktop) ── */
+.km-bottom-nav { display: none; }
+.km-clock-mobile { display: none; }
+
+/* MOBILE TAB LAYOUT */
+@media (max-width: 760px) {
+  .km-app { grid-template-rows: 52px auto 1fr 60px; }
+  .km-topbar { padding: 0 12px; box-shadow: 0 1px 4px rgba(20,20,43,0.06); }
+  .km-topbar-center { display: none; }
+  .km-brand { flex: 1; gap: 8px; }
+  .km-brand-icon { width: 28px; height: 28px; font-size: 14px; }
+  .km-brand-name { font-size: 13px; }
+  .km-brand-sub  { font-size: 9px; }
+  .km-clock-mobile {
+    display: block;
+    font-family: var(--mono);
+    font-size: 15px; font-weight: 700;
+    color: var(--amber);
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+  }
+  .km-topbar-right { gap: 6px; }
+  .km-stats-row { display: none; }
+  .km-fs-btn    { display: none; }
+  .km-conn-badge { padding: 3px 8px; font-size: 9px; }
+  .km-sound-btn {
+    width: 32px; height: 32px; padding: 0;
+    border-radius: 50%; justify-content: center; font-size: 15px;
+  }
+  .km-sound-label { display: none; }
+  .km-board { grid-template-columns: 1fr; overflow: hidden; height: 100%; }
+  .km-column {
+    display: none;
+    border-right: none;
+    height: 100%;
+    overflow: hidden;
+    flex-direction: column;
+  }
+  .km-column.km-tab-active { display: flex; }
+  .km-column.km-tab-active .km-orders-scroll {
+    animation: colFadeIn .22s ease;
+  }
+  @keyframes colFadeIn {
+    from { opacity:0; transform:translateX(10px); }
+    to   { opacity:1; transform:translateX(0); }
+  }
+  .km-col-header { padding: 10px 14px 9px; }
+  .km-action-btn { padding: 11px 6px; font-size: 12px; min-height: 44px; }
+  .km-btn-cancel { width: 44px; }
+  .km-card-room { font-size: 22px; }
+  .km-item-qty  { font-size: 14px; }
+  .km-toast-container { bottom: 72px; }
+  #kmAlertBanner { top: 52px; padding: 0 10px 6px; }
+  .km-confirm-box { border-radius: 16px; padding: 24px 18px; }
+
+  .km-bottom-nav {
+    display: flex;
+    background: #FFFFFF;
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -2px 10px rgba(20,20,43,0.05);
+    position: relative; z-index: 100; flex-shrink: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    height: calc(60px + env(safe-area-inset-bottom, 0px));
+  }
+  .km-bottom-nav::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(232,64,10,0.3), transparent);
+    opacity: 0.6;
+  }
+  .km-tab-btn {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 4px; padding: 6px 4px 8px;
+    background: none; border: none; cursor: pointer;
+    position: relative; transition: all .18s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .km-tab-btn::after {
+    content: '';
+    position: absolute; top: 0; left: 25%; right: 25%; height: 2px;
+    border-radius: 0 0 3px 3px; opacity: 0; transition: opacity .2s;
+  }
+  .km-tab-btn.tab-new::after     { background: var(--new-col); }
+  .km-tab-btn.tab-kitchen::after { background: var(--kitchen-col); }
+  .km-tab-btn.tab-ready::after   { background: var(--ready-col); }
+  .km-tab-btn.active::after { opacity: 1; }
+  .km-tab-icon {
+    font-size: 20px; line-height: 1;
+    filter: grayscale(0.6) opacity(0.55);
+    transition: filter .18s, transform .18s;
+  }
+  .km-tab-btn.active .km-tab-icon { filter: none; transform: scale(1.12); }
+  .km-tab-btn:active .km-tab-icon { transform: scale(0.92); }
+  .km-tab-label {
+    font-family: var(--sans); font-size: 9px; font-weight: 800;
+    letter-spacing: 0.6px; text-transform: uppercase;
+    color: var(--text3); transition: color .18s;
+  }
+  .km-tab-btn.active.tab-new     .km-tab-label { color: var(--new-col); }
+  .km-tab-btn.active.tab-kitchen .km-tab-label { color: var(--kitchen-col); }
+  .km-tab-btn.active.tab-ready   .km-tab-label { color: var(--ready-col); }
+  .km-tab-count {
+    position: absolute; top: 5px;
+    right: calc(50% - 24px);
+    font-family: var(--mono); font-size: 9px; font-weight: 700;
+    min-width: 16px; height: 16px; padding: 0 4px;
+    border-radius: 8px; text-align: center; line-height: 16px;
+    opacity: 0; transform: scale(0.6); transition: all .2s;
+  }
+  .km-tab-count.has-count { opacity: 1; transform: scale(1); }
+  .km-tab-btn.tab-new     .km-tab-count { background: var(--new-col);     color: white; }
+  .km-tab-btn.tab-kitchen .km-tab-count { background: var(--kitchen-col); color: white; }
+  .km-tab-btn.tab-ready   .km-tab-count { background: var(--ready-col);   color: white; }
+}
+
+/* Full screen button */
+.km-fs-btn {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text2); border-radius: 10px; width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 16px; flex-shrink: 0;
+  transition: all .18s cubic-bezier(.4,0,.2,1);
+  box-shadow: var(--shadow-card);
+}
+.km-fs-btn:hover  { background: var(--border); color: var(--text); }
+.km-fs-btn:active { transform: scale(0.93); }
+
+/* Sound toggle */
+.km-sound-btn {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text2); border-radius: 10px; padding: 0 12px; height: 36px;
+  display: flex; align-items: center; gap: 5px;
+  cursor: pointer; font-size: 12px; font-weight: 800;
+  transition: all .18s cubic-bezier(.4,0,.2,1); white-space: nowrap;
+  box-shadow: var(--shadow-card);
+}
+.km-sound-btn:active { transform: scale(0.95); }
+.km-sound-btn.on { background: rgba(0,179,122,0.09); color: var(--ready-col); border-color: rgba(0,179,122,0.25); }
+
+/* Settings btn */
+.km-settings-btn {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text2); border-radius: 10px; width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 16px; flex-shrink: 0;
+  transition: all .18s; box-shadow: var(--shadow-card);
+}
+.km-settings-btn:hover { background: var(--border); color: var(--text); transform: rotate(30deg); }
+.km-settings-btn:active { transform: scale(0.93) rotate(30deg); }
+
+/* ═══════════ SETTINGS OVERLAY ═══════════ */
+#kmSettingsOverlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(10,10,20,0.6); backdrop-filter: blur(8px);
+  z-index: 9100; align-items: flex-start; justify-content: flex-end;
+  padding: 0;
+}
+#kmSettingsOverlay.open { display: flex; }
+
+.km-settings-panel {
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  width: min(420px, 100vw);
+  height: 100vh; height: 100dvh;
+  display: flex; flex-direction: column;
+  box-shadow: -8px 0 40px rgba(0,0,0,0.2);
+  animation: slideInRight .28s cubic-bezier(.4,0,.2,1);
+  overflow: hidden;
+}
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+
+.km-settings-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 18px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0; position: relative;
+}
+.km-settings-header::after {
+  content:''; position:absolute; bottom:0; left:0; right:0; height:2px;
+  background: linear-gradient(90deg, transparent, var(--amber), transparent);
+  opacity: 0.25;
+}
+.km-settings-title {
+  font-size: 14px; font-weight: 800; color: var(--text); letter-spacing: -0.2px;
+  display: flex; align-items: center; gap: 8px;
+}
+.km-settings-close {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--text2); width: 30px; height: 30px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 12px; transition: all .16s; flex-shrink: 0;
+}
+.km-settings-close:hover { background: var(--border); color: var(--text); }
+
+.km-settings-body {
+  flex: 1; overflow-y: auto; padding: 12px;
+  display: flex; flex-direction: column; gap: 10px;
+  scrollbar-width: thin; scrollbar-color: var(--border-hi) transparent;
+  /* Ensure all content is scrollable and visible */
+  min-height: 0;
+}
+.km-settings-body::-webkit-scrollbar { width: 3px; }
+.km-settings-body::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 3px; }
+
+.km-settings-section {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--r); overflow: hidden; flex-shrink: 0;
+}
+.km-settings-section-title {
+  font-size: 9px; font-weight: 800; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--text3);
+  padding: 9px 14px 7px; border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+}
+
+/* Every row: auto-fit — label stacks above control when space is tight */
+.km-settings-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 14px; gap: 10px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.km-settings-row:last-child { border-bottom: none; }
+
+/* Label group (always full row when control wraps below) */
+.km-settings-row > div:first-child {
+  flex: 1 1 140px; min-width: 0;
+}
+.km-settings-label {
+  font-size: 12px; font-weight: 700; color: var(--text);
+}
+.km-settings-sub {
+  font-size: 10px; color: var(--text3); font-family: var(--mono);
+  margin-top: 2px;
+}
+
+/* Toggle rows — never wrap, toggle stays inline */
+.km-settings-row:has(.km-toggle) {
+  flex-wrap: nowrap; align-items: center;
+}
+.km-settings-row:has(.km-toggle) > div:first-child { flex: 1 1 auto; }
+
+/* Toggle switch */
+.km-toggle {
+  position: relative; width: 42px; height: 24px; flex-shrink: 0;
+}
+.km-toggle input { opacity: 0; width: 0; height: 0; }
+.km-toggle-slider {
+  position: absolute; inset: 0; cursor: pointer;
+  background: var(--border-hi); border-radius: 24px;
+  transition: background .2s;
+}
+.km-toggle-slider::before {
+  content:''; position:absolute; height:18px; width:18px;
+  left:3px; bottom:3px; border-radius:50%;
+  background: white; transition: transform .2s;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}
+.km-toggle input:checked + .km-toggle-slider { background: var(--ready-col); }
+.km-toggle input:checked + .km-toggle-slider::before { transform: translateX(18px); }
+
+/* Segmented control — auto-fit, always visible */
+.km-settings-row:has(.km-seg) {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.km-settings-row:has(.km-seg) > div:first-child {
+  flex: 1 1 100%; /* label takes full row when seg wraps */
+}
+.km-seg {
+  display: flex; gap: 2px; flex: 1 1 auto; width: 100%;
+  background: var(--border); border-radius: 8px; padding: 2px;
+  box-sizing: border-box;
+}
+.km-seg-btn {
+  font-family: var(--sans); font-size: 10px; font-weight: 800;
+  flex: 1; padding: 6px 4px; border-radius: 6px; cursor: pointer;
+  background: transparent; border: none; color: var(--text3);
+  transition: all .16s; white-space: nowrap; text-align: center;
+  min-width: 0;
+}
+.km-seg-btn.active {
+  background: var(--surface); color: var(--text);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+}
+
+/* Range slider rows — label stacks, slider takes full width */
+.km-settings-row:has(.km-range-wrap) {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.km-settings-row:has(.km-range-wrap) > div:first-child {
+  flex: 1 1 100%;
+}
+.km-range-wrap {
+  display: flex; align-items: center; gap: 8px;
+  flex: 1 1 100%; width: 100%;
+}
+.km-range-val {
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  color: var(--amber); min-width: 32px; text-align: right; flex-shrink: 0;
+}
+.km-range {
+  flex: 1; -webkit-appearance: none; appearance: none;
+  height: 4px; border-radius: 3px; background: var(--border-hi);
+  outline: none; cursor: pointer; min-width: 0;
+}
+.km-range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--amber); cursor: pointer;
+  box-shadow: 0 1px 4px var(--amber-glow);
+  transition: transform .12s;
+}
+.km-range::-webkit-slider-thumb:hover { transform: scale(1.2); }
+.km-range::-webkit-slider-thumb:active { transform: scale(1.15); }
+.km-range::-moz-range-thumb {
+  width: 18px; height: 18px; border-radius: 50%; border: none;
+  background: var(--amber); cursor: pointer;
+}
+
+/* Color dot station */
+.km-color-dot {
+  width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+}
+
+/* Station name input — full width below label */
+.km-settings-row:has(.km-settings-input) {
+  flex-wrap: wrap; gap: 8px;
+}
+.km-settings-row:has(.km-settings-input) > div:first-child {
+  flex: 1 1 100%;
+}
+.km-settings-input {
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text); border-radius: 8px; padding: 8px 12px;
+  font-family: var(--sans); font-size: 13px; font-weight: 600;
+  outline: none; width: 100%; box-sizing: border-box;
+  transition: border-color .16s;
+}
+.km-settings-input:focus { border-color: var(--amber); }
+
+/* Settings footer */
+.km-settings-footer {
+  padding: 12px 14px; border-top: 1px solid var(--border); flex-shrink: 0;
+  display: flex; gap: 8px;
+}
+.km-settings-save {
+  flex: 1; padding: 11px; border-radius: 10px; border: none;
+  font-family: var(--sans); font-size: 13px; font-weight: 800;
+  cursor: pointer; background: var(--amber); color: white;
+  box-shadow: 0 2px 8px var(--amber-glow); transition: all .16s;
+}
+.km-settings-save:active { transform: scale(0.97); }
+.km-settings-reset {
+  padding: 11px 16px; border-radius: 10px; border: 1px solid var(--border);
+  font-family: var(--sans); font-size: 12px; font-weight: 800;
+  cursor: pointer; background: var(--bg); color: var(--text2);
+  transition: all .16s;
+}
+.km-settings-reset:hover { border-color: var(--urgent-col); color: var(--urgent-col); }
+
+/* ═══════════ CLOCK SUB-BAR ═══════════ */
+.km-clock-bar {
+  display: flex; align-items: center; justify-content: center;
+  gap: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 6px 20px;
+  position: relative;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(20,20,43,0.04);
+}
+.km-clock-bar::after {
+  content:'';
+  position:absolute; bottom:0; left:0; right:0; height:2px;
+  background: linear-gradient(90deg, transparent, var(--amber) 40%, var(--amber) 60%, transparent);
+  opacity: 0.22;
+}
+
+.km-clock-display {
+  display: flex; align-items: baseline; gap: 2px;
+  font-family: var(--mono);
+}
+.km-clock-hm {
+  font-size: clamp(28px, 5vw, 44px);
+  font-weight: 800;
+  color: var(--amber);
+  letter-spacing: -1px;
+  line-height: 1;
+}
+.km-clock-sep {
+  font-size: clamp(20px, 3.5vw, 32px);
+  font-weight: 800;
+  color: var(--amber);
+  opacity: 0.7;
+  letter-spacing: 0;
+  animation: sepBlink 1s step-end infinite;
+  line-height: 1;
+}
+@keyframes sepBlink {
+  0%, 49% { opacity: 0.7; }
+  50%, 100% { opacity: 0.2; }
+}
+.km-clock-sec {
+  font-size: clamp(16px, 2.5vw, 24px);
+  font-weight: 700;
+  color: var(--amber);
+  opacity: 0.65;
+  letter-spacing: 0;
+  line-height: 1;
+  align-self: flex-end;
+  padding-bottom: 2px;
+}
+.km-clock-bar-date {
+  position: absolute; right: 20px; top: 50%; transform: translateY(-50%);
+  font-family: var(--mono); font-size: 10px; color: var(--text3);
+  letter-spacing: .5px; text-align: right;
+}
+
+/* Mobile: compact clock bar */
+@media (max-width: 760px) {
+  .km-app { grid-template-rows: 52px auto 1fr 60px; }
+  .km-clock-bar { padding: 5px 14px; }
+  .km-clock-bar-date { font-size: 9px; right: 14px; }
+  .km-clock-hm  { font-size: 28px; }
+  .km-clock-sep { font-size: 22px; }
+  .km-clock-sec { font-size: 16px; }
+  /* Hide mobile clock in topbar since it's now in sub-bar */
+  .km-clock-mobile { display: none !important; }
+}
+
+
+#kmIdleOverlay {
+  display: none; position: fixed; inset: 0;
+  background: var(--bg); z-index: 8500;
+  flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; cursor: pointer;
+}
+#kmIdleOverlay.visible { display: flex; }
+.km-idle-clock {
+  font-family: var(--mono); font-size: clamp(48px, 12vw, 96px);
+  font-weight: 800; color: var(--amber); letter-spacing: -2px;
+  line-height: 1; text-shadow: 0 0 40px var(--amber-glow);
+}
+.km-idle-date {
+  font-family: var(--mono); font-size: 14px; color: var(--text3);
+  letter-spacing: 2px; text-transform: uppercase; margin-top: 4px;
+}
+.km-idle-stats {
+  display: flex; gap: 16px; margin-top: 20px;
+}
+.km-idle-stat {
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  padding: 8px 16px; border-radius: 10px;
+  border: 1px solid var(--border); color: var(--text2);
+  display: flex; align-items: center; gap: 6px;
+}
+.km-idle-tap {
+  font-family: var(--mono); font-size: 11px; color: var(--text3);
+  letter-spacing: 2px; text-transform: uppercase;
+  margin-top: 16px; animation: idlePulse 2s ease-in-out infinite;
+}
+@keyframes idlePulse { 0%,100%{opacity:.4} 50%{opacity:1} }
+
+/* Font size variants */
+[data-fontsize="large"] { font-size: 16px; }
+[data-fontsize="large"] .km-card-room { font-size: 26px; }
+[data-fontsize="large"] .km-item-name { font-size: 15px; }
+[data-fontsize="large"] .km-item-qty  { font-size: 15px; }
+[data-fontsize="large"] .km-action-btn { font-size: 13px; padding: 10px 6px; }
+[data-fontsize="large"] .km-col-title { font-size: 13px; }
+[data-fontsize="small"] { font-size: 12px; }
+[data-fontsize="small"] .km-card-room { font-size: 17px; }
+[data-fontsize="small"] .km-item-name { font-size: 11px; }
+[data-fontsize="small"] .km-item-qty  { font-size: 11px; }
+[data-fontsize="small"] .km-action-btn { font-size: 10px; padding: 6px 4px; }
+
+/* Card density */
+[data-density="compact"] .km-orders-scroll { gap: 6px; padding: 8px 8px; }
+[data-density="compact"] .km-card-header  { padding: 7px 10px 6px 12px; }
+[data-density="compact"] .km-card-items   { padding: 4px 10px 6px 12px; gap: 2px; }
+[data-density="compact"] .km-card-footer  { padding: 6px 8px; }
+[data-density="compact"] .km-card-total   { padding: 4px 10px 6px 12px; }
+[data-density="compact"] .km-card-guest   { padding: 5px 10px 0 12px; }
+
+[data-density="spacious"] .km-orders-scroll { gap: 14px; padding: 16px 14px; }
+[data-density="spacious"] .km-card-header  { padding: 14px 16px 12px 18px; }
+[data-density="spacious"] .km-card-items   { padding: 10px 16px 14px 18px; gap: 6px; }
+[data-density="spacious"] .km-card-footer  { padding: 12px 12px; }
+[data-density="spacious"] .km-card-total   { padding: 10px 16px 14px 18px; }
+[data-density="spacious"] .km-card-guest   { padding: 10px 16px 0 18px; }
+
+/* Hide price when setting is off */
+[data-hideprice="true"] .km-item-price  { display: none; }
+[data-hideprice="true"] .km-card-total span:last-child { display: none; }
+
+/* Kiosk readonly mode — hide action buttons */
+[data-kiosk="true"] .km-card-footer { display: none; }
+[data-kiosk="true"] .km-card-total  { border-bottom-left-radius: var(--r); border-bottom-right-radius: var(--r); }
+
+@media (max-width: 760px) {
+  /* Settings panel: full width on mobile */
+  .km-settings-panel { width: 100vw; border-left: none; }
+  .km-settings-body { gap: 8px; padding: 10px; }
+  .km-settings-section-title { padding: 8px 12px 7px; font-size: 8px; }
+  .km-settings-row { padding: 10px 12px; gap: 8px; }
+  .km-settings-label { font-size: 13px; }
+  .km-settings-sub { font-size: 10px; }
+  .km-settings-header { padding: 14px 16px; }
+  .km-settings-title { font-size: 13px; }
+  .km-settings-footer { padding: 12px; }
+  /* Slightly larger touch targets on mobile */
+  .km-seg-btn { padding: 7px 4px; font-size: 11px; min-height: 34px; }
+  .km-toggle { width: 44px; height: 26px; }
+  .km-toggle-slider::before { height: 20px; width: 20px; }
+  .km-toggle input:checked + .km-toggle-slider::before { transform: translateX(18px); }
+  .km-range { height: 5px; }
+  .km-range::-webkit-slider-thumb { width: 22px; height: 22px; }
+}
+</style>
+</head>
+<body>
+
+<!-- LOADING SCREEN -->
+<div id="kmLoader">
+  <div class="km-loader-logo">👨‍🍳</div>
+  <div class="km-loader-title">Kitchen Monitor</div>
+  <div class="km-loader-sub" id="kmLoaderSub">Menghubungkan ke Firebase...</div>
+  <div class="km-loader-bar"><div class="km-loader-fill"></div></div>
+</div>
+
+<!-- MAIN APP -->
+<div class="km-app" id="kmApp" style="display:none;">
+
+  <!-- TOP BAR -->
+  <header class="km-topbar">
+    <div class="km-brand">
+      <div class="km-brand-icon">👨‍🍳</div>
+      <div>
+        <div class="km-brand-name" id="kmPropName">Kitchen Monitor</div>
+        <div class="km-brand-sub" id="kmBrandSub">DAPUR · LIVE</div>
+      </div>
+    </div>
+
+    <div class="km-topbar-center">
+    </div>
+
+    <div class="km-topbar-right">
+      <span class="km-clock-mobile" id="kmClockMobile">00:00</span>
+      <div class="km-stats-row">
+        <div class="km-stat" id="statTotalOrders">📋 0 order</div>
+        <div class="km-stat" id="statTotalItems">🍽 0 item</div>
+        <div class="km-stat" id="statPortalCount">📲 0 portal</div>
+      </div>
+      <button class="km-sound-btn on" id="kmSoundBtn" onclick="toggleSound()">🔔 <span class="km-sound-label">Suara</span></button>
+      <button class="km-fs-btn" onclick="toggleFullscreen()" title="Fullscreen">⛶</button>
+      <button class="km-settings-btn" onclick="openSettings()" title="Pengaturan">⚙️</button>
+      <div class="km-conn-badge connecting" id="kmConnBadge" style="display:none">
+        <span class="km-conn-dot"></span>
+        <span id="kmConnText">Menghubungkan</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- CLOCK SUB-BAR -->
+  <div class="km-clock-bar">
+    <div class="km-clock-display">
+      <span class="km-clock-hm" id="kmClockHM">00:00</span>
+      <span class="km-clock-sep">:</span>
+      <span class="km-clock-sec" id="kmClockSec">00</span>
+    </div>
+    <div class="km-clock-bar-date" id="kmDate">—</div>
+  </div>
+
+  <!-- ALERT BANNER -->
+  <div id="kmAlertBanner"></div>
+
+  <!-- KANBAN BOARD -->
+  <div class="km-board">
+
+    <!-- COLUMN 1: BARU -->
+    <div class="km-column col-new km-tab-active" id="col-new">
+      <div class="km-col-header">
+        <div class="km-col-header-left">
+          <div class="km-col-dot"></div>
+          <div class="km-col-title">🔔 Baru Masuk</div>
+        </div>
+        <div class="km-col-count" id="count-new">0</div>
+      </div>
+      <div class="km-orders-scroll" id="list-new">
+        <div class="km-empty" id="empty-new">
+          <div class="km-empty-icon">🔕</div>
+          <div class="km-empty-text">Tidak ada pesanan baru<br>Menunggu order masuk...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COLUMN 2: DI DAPUR -->
+    <div class="km-column col-kitchen" id="col-kitchen">
+      <div class="km-col-header">
+        <div class="km-col-header-left">
+          <div class="km-col-dot"></div>
+          <div class="km-col-title">👨‍🍳 Di Dapur</div>
+        </div>
+        <div class="km-col-count" id="count-kitchen">0</div>
+      </div>
+      <div class="km-orders-scroll" id="list-kitchen">
+        <div class="km-empty" id="empty-kitchen">
+          <div class="km-empty-icon">🍳</div>
+          <div class="km-empty-text">Tidak ada pesanan<br>yang sedang dimasak</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COLUMN 3: SIAP ANTAR -->
+    <div class="km-column col-ready" id="col-ready">
+      <div class="km-col-header">
+        <div class="km-col-header-left">
+          <div class="km-col-dot"></div>
+          <div class="km-col-title">✅ Siap Antar</div>
+        </div>
+        <div class="km-col-count" id="count-ready">0</div>
+      </div>
+      <div class="km-orders-scroll" id="list-ready">
+        <div class="km-empty" id="empty-ready">
+          <div class="km-empty-icon">🚀</div>
+          <div class="km-empty-text">Belum ada pesanan<br>yang siap diantar</div>
+        </div>
+      </div>
+    </div>
+
+</div><!-- /km-board -->
+
+  <!-- BOTTOM TAB NAV (mobile only) -->
+  <nav class="km-bottom-nav" id="kmBottomNav">
+    <button class="km-tab-btn tab-new active" onclick="switchTab('new')" id="tab-new">
+      <span class="km-tab-icon">🔔</span>
+      <span class="km-tab-label">Baru</span>
+      <span class="km-tab-count" id="tab-count-new">0</span>
+    </button>
+    <button class="km-tab-btn tab-kitchen" onclick="switchTab('kitchen')" id="tab-kitchen">
+      <span class="km-tab-icon">👨‍🍳</span>
+      <span class="km-tab-label">Dapur</span>
+      <span class="km-tab-count" id="tab-count-kitchen">0</span>
+    </button>
+    <button class="km-tab-btn tab-ready" onclick="switchTab('ready')" id="tab-ready">
+      <span class="km-tab-icon">✅</span>
+      <span class="km-tab-label">Siap</span>
+      <span class="km-tab-count" id="tab-count-ready">0</span>
+    </button>
+  </nav>
+
+</div><!-- /km-app -->
+
+<!-- TOAST CONTAINER -->
+<div class="km-toast-container" id="kmToastContainer"></div>
+
+<!-- CONFIRM OVERLAY -->
+<div id="kmConfirmOverlay">
+  <div class="km-confirm-box">
+    <div class="km-confirm-icon" id="kmConfirmIcon">⚠️</div>
+    <div class="km-confirm-title" id="kmConfirmTitle">Konfirmasi</div>
+    <div class="km-confirm-body" id="kmConfirmBody">Yakin?</div>
+    <div class="km-confirm-actions">
+      <button class="km-confirm-btn km-confirm-cancel" onclick="closeKmConfirm()">Batal</button>
+      <button class="km-confirm-btn km-confirm-ok" id="kmConfirmOk" onclick="doKmConfirm()">Ya</button>
+    </div>
+  </div>
+</div>
+
+<!-- IDLE OVERLAY -->
+<div id="kmIdleOverlay" onclick="dismissIdle()">
+  <div class="km-idle-clock" id="kmIdleClock">00:00</div>
+  <div class="km-idle-date" id="kmIdleDate">—</div>
+  <div class="km-idle-stats">
+    <div class="km-idle-stat" id="idleStatNew">🔔 0 Baru</div>
+    <div class="km-idle-stat" id="idleStatKitchen">👨‍🍳 0 Dapur</div>
+    <div class="km-idle-stat" id="idleStatReady">✅ 0 Siap</div>
+  </div>
+  <div class="km-idle-tap">TAP UNTUK KEMBALI</div>
+</div>
+
+<!-- SETTINGS PANEL -->
+<div id="kmSettingsOverlay" onclick="handleSettingsOverlayClick(event)">
+  <div class="km-settings-panel" id="kmSettingsPanel">
+    <div class="km-settings-header">
+      <div class="km-settings-title">⚙️ Pengaturan Kitchen Monitor</div>
+      <button class="km-settings-close" onclick="closeSettings()">✕</button>
+    </div>
+
+    <div class="km-settings-body">
+
+      <!-- DISPLAY & VISUAL -->
+      <div class="km-settings-section">
+        <div class="km-settings-section-title">🎨 Tampilan & Visual</div>
+
+        <div class="km-settings-row">
+          <div>
+            <div class="km-settings-label">Mode Gelap</div>
+            <div class="km-settings-sub">Tema gelap / terang</div>
+          </div>
+          <label class="km-toggle">
+            <input type="checkbox" id="setDarkMode" onchange="applySettings()">
+            <span class="km-toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="km-settings-row">
+          <div>
+            <div class="km-settings-label">Ukuran Font</div>
+            <div class="km-settings-sub">Ukuran teks kartu order</div>
+          </div>
+          <div class="km-seg" id="setFontSizeSeg">
+            <button class="km-seg-btn" data-val="small" onclick="segSelect('setFontSizeSeg',this)">S</button>
+            <button class="km-seg-btn active" data-val="normal" onclick="segSelect('setFontSizeSeg',this)">M</button>
+            <button class="km-seg-btn" data-val="large" onclick="segSelect('setFontSizeSeg',this)">L</button>
+          </div>
+        </div>
+
+        <div class="km-settings-row">
+          <div>
+            <div class="km-settings-label">Kepadatan Kartu</div>
+            <div class="km-settings-sub">Jarak antar elemen</div>
+          </div>
+          <div class="km-seg" id="setDensitySeg">
+            <button class="km-seg-btn" data-val="compact" onclick="segSelect('setDensitySeg',this)">Padat</button>
+            <button class="km-seg-btn active" data-val="normal" onclick="segSelect('setDensitySeg',this)">Normal</button>
+            <button class="km-seg-btn" data-val="spacious" onclick="segSelect('setDensitySeg',this)">Lebar</button>
+          </div>
+        </div>
+
+        <div class="km-settings-row">
+          <div>
+            <div class="km-settings-label">Sembunyikan Harga</div>
+            <div class="km-settings-sub">Harga tidak ditampilkan ke chef</div>
+          </div>
+          <label class="km-toggle">
+            <input type="checkbox" id="setHidePrice" onchange="applySettings()">
+            <span class="km-toggle-slider"></span>
+          </label>
+        </div>
+
+      </div>
+
+      <!-- TIMER THRESHOLD -->
+      <div class="km-settings-section">
+        <div class="km-settings-section-title">⏱️ Threshold Timer Urgensi</div>
+
+        <div class="km-settings-row">
+          <div>
+            <div class="km-settings-label">Order Baru — Warning</div>
+            <div class="km-settings-sub">Menit sebelum kuning</div>
+          </div>
+          <div class="km-range-wrap">
+            <input type="range" class="km-range" id="setNewWarn" min="2" max="15" value="5"
+              oninput="document.getElementById('setNewWarnVal').textContent=this.value+'m'; applySettings()">
+            <span class="km-range-val" id="setNewWarnVal">5m</span>
+          </div>
+        </div>
+
+        <div class="km-settings-row">
+          <div>
+            <div class="km-settings-label">Order Baru — Urgent</div>
+            <div class="km-settings-sub">Menit sebelum merah</div>
+          </div>
+          <div class="km-range-wrap">
+            <input type="range" class="km-range" id="setNewUrgent" min="5" max="30" value="10"
+              oninput="document.getElementById('setNewUrgentVal').textContent=this.value+'m'; applySettings()">
+            <span class="km-range-val" id="setNewUrgentVal">10m</span>
+          </div>
+        </div>
+
+        <div class="km-settings-row">
+          <div>
+            <div class="km-settings-label">Di Dapur — Warning</div>
+            <div class="km-settings-sub">Menit sebelum kuning</div>
+          </div>
+          <div class="km-range-wrap">
+            <input type="range" class="km-range" id="setKitchenWarn" min="5" max="30" value="12"
+              oninput="document.getElementById('setKitchenWarnVal').textContent=this.value+'m'; applySettings()">
+            <span class="km-range-val" id="setKitchenWarnVal">12m</span>
+          </div>
+        </div>
+
+        <div class="km-settings-row">
+          <div>
+            <div class="km-settings-label">Di Dapur — Urgent</div>
+            <div class="km-settings-sub">Menit sebelum merah</div>
+          </div>
+          <div class="km-range-wrap">
+            <input type="range" class="km-range" id="setKitchenUrgent" min="10" max="60" value="20"
+              oninput="document.getElementById('setKitchenUrgentVal').textContent=this.value+'m'; applySettings()">
+            <span class="km-range-val" id="setKitchenUrgentVal">20m</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- SUARA & NOTIFIKASI -->
+      <div class="km-settings-section">
+        <div class="km-settings-section-title">🔔 Suara & Notifikasi</div>
+
+        <div class="km-settings-row">
+          <div>
+            <div class="km-settings-label">Volume Suara</div>
+            <div class="km-settings-sub">Kekerasan beep notifikasi</div>
+          </div>
+          <div class="km-range-wrap">
+            <input type="range" class="km-range" id="setVolume" min="0" max="100" value="60"
+              oninput="document.getElementById('setVolumeVal').textContent=this.value+'%'; applySettings()">
+            <span class="km-range-val" id="setVolumeVal">60%</span>
+          </div>
+        </div>
+
+        <div class="km-settings-row">
+          <div>
+            <div class="km-settings-label">Tipe Suara</div>
+            <div class="km-settings-sub">Order baru</div>
+          </div>
+          <div class="km-seg" id="setSoundTypeSeg">
+            <button class="km-seg-btn active" data-val="beep" onclick="segSelect('setSoundTypeSeg',this); previewSound()">Beep</button>
+            <button class="km-seg-btn" data-val="bell" onclick="segSelect('setSoundTypeSeg',this); previewSound()">Bell</button>
+            <button class="km-seg-btn" data-val="blip" onclick="segSelect('setSoundTypeSeg',this); previewSound()">Blip</button>
+          </div>
+        </div>
+
+        <div class="km-settings-row">
+          <div>
+            <div class="km-settings-label">Alert Auto-Dismiss</div>
+            <div class="km-settings-sub">Detik sebelum banner hilang</div>
+          </div>
+          <div class="km-range-wrap">
+            <input type="range" class="km-range" id="setAlertDismiss" min="5" max="60" value="12"
+              oninput="document.getElementById('setAlertDismissVal').textContent=this.value+'s'; applySettings()">
+            <span class="km-range-val" id="setAlertDismissVal">12s</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- STATION & DEFAULT TAB -->
+      <div class="km-settings-section">
+        <div class="km-settings-section-title">🏷️ Station & Default Tab</div>
+
+        <div class="km-settings-row">
+          <div>
+            <div class="km-settings-label">Nama Station</div>
+            <div class="km-settings-sub">Ditampilkan di header</div>
+          </div>
+          <input type="text" class="km-settings-input" id="setStationName"
+            placeholder="HOT KITCHEN" maxlength="20" oninput="applySettings()">
+        </div>
+
+        <div class="km-settings-row">
+          <div>
+            <div class="km-settings-label">Default Tab (Mobile)</div>
+            <div class="km-settings-sub">Tab aktif saat pertama buka</div>
+          </div>
+          <div class="km-seg" id="setDefaultTabSeg">
+            <button class="km-seg-btn active" data-val="new" onclick="segSelect('setDefaultTabSeg',this)">Baru</button>
+            <button class="km-seg-btn" data-val="kitchen" onclick="segSelect('setDefaultTabSeg',this)">Dapur</button>
+            <button class="km-seg-btn" data-val="ready" onclick="segSelect('setDefaultTabSeg',this)">Siap</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- IDLE & KIOSK -->
+      <div class="km-settings-section">
+        <div class="km-settings-section-title">👁️ Idle & Kiosk</div>
+
+        <div class="km-settings-row">
+          <div>
+            <div class="km-settings-label">Idle Screensaver</div>
+            <div class="km-settings-sub">Tampilkan jam saat tidak aktif</div>
+          </div>
+          <label class="km-toggle">
+            <input type="checkbox" id="setIdleEnabled" onchange="applySettings()" checked>
+            <span class="km-toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="km-settings-row">
+          <div>
+            <div class="km-settings-label">Waktu Idle</div>
+            <div class="km-settings-sub">Menit tidak aktif → screensaver</div>
+          </div>
+          <div class="km-range-wrap">
+            <input type="range" class="km-range" id="setIdleTime" min="1" max="30" value="5"
+              oninput="document.getElementById('setIdleTimeVal').textContent=this.value+'m'; applySettings()">
+            <span class="km-range-val" id="setIdleTimeVal">5m</span>
+          </div>
+        </div>
+
+        <div class="km-settings-row">
+          <div>
+            <div class="km-settings-label">Mode Kiosk (Read-Only)</div>
+            <div class="km-settings-sub">Sembunyikan tombol aksi</div>
+          </div>
+          <label class="km-toggle">
+            <input type="checkbox" id="setKioskMode" onchange="applySettings()">
+            <span class="km-toggle-slider"></span>
+          </label>
+        </div>
+
+        <div class="km-settings-row">
+          <div>
+            <div class="km-settings-label">Auto Fullscreen</div>
+            <div class="km-settings-sub">Fullscreen otomatis saat load</div>
+          </div>
+          <label class="km-toggle">
+            <input type="checkbox" id="setAutoFullscreen" onchange="applySettings()">
+            <span class="km-toggle-slider"></span>
+          </label>
+        </div>
+
+      </div>
+
+    </div><!-- /settings-body -->
+
+    <div class="km-settings-footer">
+      <button class="km-settings-reset" onclick="resetSettings()">↺ Reset</button>
+      <button class="km-settings-save" onclick="saveSettings()">💾 Simpan & Terapkan</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════
+   KITCHEN MONITOR — MAIN ENGINE v2
+   + Settings Panel: Dark Mode, Font Size, Density,
+     Hide Price, Timer Thresholds, Sound Controls,
+     Station Name, Default Tab, Idle Screensaver,
+     Kiosk Mode, Auto Fullscreen
+═══════════════════════════════════════════════════ */
+
+// ── State ──
+let _orders          = [];
+let _soundOn         = true;
+let _confirmCb       = null;
+let _knownIds        = new Set();
+let _timerInterval   = null;
+let _propName        = 'Dafam Enkadeli';
+let _initialLoadDone = false;
+let _idleTimer       = null;
+let _idleActive      = false;
+
+// ── Default Settings ──
+const DEFAULT_SETTINGS = {
+  darkMode:       false,
+  fontSize:       'normal',
+  density:        'normal',
+  hidePrice:      false,
+  newWarn:        5,
+  newUrgent:      10,
+  kitchenWarn:    12,
+  kitchenUrgent:  20,
+  volume:         60,
+  soundType:      'beep',
+  alertDismiss:   12,
+  stationName:    '',
+  defaultTab:     'new',
+  idleEnabled:    true,
+  idleTime:       5,
+  kioskMode:      false,
+  autoFullscreen: false,
+};
+
+let _cfg = { ...DEFAULT_SETTINGS };
+
+// ── Settings: Load from localStorage ──
+function loadSettings() {
+  try {
+    const saved = localStorage.getItem('km_settings_v2');
+    if (saved) _cfg = { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
+  } catch(e) {}
+}
+
+function saveSettings() {
+  try { localStorage.setItem('km_settings_v2', JSON.stringify(_cfg)); } catch(e) {}
+  applySettings();
+  closeSettings();
+  kmToast('⚙️ Pengaturan disimpan', 'success');
+}
+
+function resetSettings() {
+  showKmConfirm('↺', 'Reset Pengaturan?',
+    'Semua pengaturan akan kembali ke nilai default.',
+    'Ya, Reset', 'var(--urgent-col)',
+    () => {
+      _cfg = { ...DEFAULT_SETTINGS };
+      saveSettings();
+      populateSettingsUI();
+      kmToast('↺ Pengaturan direset ke default', 'info');
+    }
+  );
+}
+
+// ── Apply settings to DOM ──
+function applySettings() {
+  // Read current UI state into _cfg
+  _cfg.darkMode       = document.getElementById('setDarkMode')?.checked ?? _cfg.darkMode;
+  _cfg.fontSize       = getSegVal('setFontSizeSeg');
+  _cfg.density        = getSegVal('setDensitySeg');
+  _cfg.hidePrice      = document.getElementById('setHidePrice')?.checked ?? _cfg.hidePrice;
+  _cfg.newWarn        = parseInt(document.getElementById('setNewWarn')?.value ?? _cfg.newWarn);
+  _cfg.newUrgent      = parseInt(document.getElementById('setNewUrgent')?.value ?? _cfg.newUrgent);
+  _cfg.kitchenWarn    = parseInt(document.getElementById('setKitchenWarn')?.value ?? _cfg.kitchenWarn);
+  _cfg.kitchenUrgent  = parseInt(document.getElementById('setKitchenUrgent')?.value ?? _cfg.kitchenUrgent);
+  _cfg.volume         = parseInt(document.getElementById('setVolume')?.value ?? _cfg.volume);
+  _cfg.soundType      = getSegVal('setSoundTypeSeg');
+  _cfg.alertDismiss   = parseInt(document.getElementById('setAlertDismiss')?.value ?? _cfg.alertDismiss);
+  _cfg.stationName    = document.getElementById('setStationName')?.value.trim() ?? _cfg.stationName;
+  _cfg.defaultTab     = getSegVal('setDefaultTabSeg');
+  _cfg.idleEnabled    = document.getElementById('setIdleEnabled')?.checked ?? _cfg.idleEnabled;
+  _cfg.idleTime       = parseInt(document.getElementById('setIdleTime')?.value ?? _cfg.idleTime);
+  _cfg.kioskMode      = document.getElementById('setKioskMode')?.checked ?? _cfg.kioskMode;
+  _cfg.autoFullscreen = document.getElementById('setAutoFullscreen')?.checked ?? _cfg.autoFullscreen;
+
+  // Apply to DOM
+  const root = document.documentElement;
+
+  // Theme
+  root.setAttribute('data-theme', _cfg.darkMode ? 'dark' : 'light');
+
+  // Font size
+  root.setAttribute('data-fontsize', _cfg.fontSize);
+
+  // Density
+  root.setAttribute('data-density', _cfg.density);
+
+  // Hide price
+  root.setAttribute('data-hideprice', _cfg.hidePrice ? 'true' : 'false');
+
+  // Kiosk
+  root.setAttribute('data-kiosk', _cfg.kioskMode ? 'true' : 'false');
+
+  // Station name in header
+  const sub = document.getElementById('kmBrandSub');
+  if (sub && sub.textContent === 'DAPUR · LIVE' || sub?.textContent?.includes('DAPUR')) {
+    const stationLabel = _cfg.stationName
+      ? _cfg.stationName.toUpperCase() + ' · LIVE'
+      : 'DAPUR · LIVE';
+    sub.textContent = stationLabel;
+  }
+
+  // Reset idle timer with new time
+  resetIdleTimer();
+
+  // Update sound button
+  const sBtn = document.getElementById('kmSoundBtn');
+  if (sBtn) {
+    sBtn.innerHTML = _soundOn ? '🔔 <span class="km-sound-label">Suara</span>' : '🔕 <span class="km-sound-label">Bisu</span>';
+    sBtn.className = 'km-sound-btn' + (_soundOn ? ' on' : '');
+  }
+}
+
+// ── Populate Settings UI from _cfg ──
+function populateSettingsUI() {
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el[typeof val === 'boolean' ? 'checked' : 'value'] = val; };
+  const setRangeLabel = (id, labelId, suffix) => {
+    const el = document.getElementById(id);
+    const lbl = document.getElementById(labelId);
+    if (el && lbl) lbl.textContent = el.value + suffix;
+  };
+
+  set('setDarkMode', _cfg.darkMode);
+  set('setHidePrice', _cfg.hidePrice);
+  set('setIdleEnabled', _cfg.idleEnabled);
+  set('setKioskMode', _cfg.kioskMode);
+  set('setAutoFullscreen', _cfg.autoFullscreen);
+  set('setNewWarn', _cfg.newWarn);
+  set('setNewUrgent', _cfg.newUrgent);
+  set('setKitchenWarn', _cfg.kitchenWarn);
+  set('setKitchenUrgent', _cfg.kitchenUrgent);
+  set('setVolume', _cfg.volume);
+  set('setAlertDismiss', _cfg.alertDismiss);
+  set('setIdleTime', _cfg.idleTime);
+  set('setStationName', _cfg.stationName);
+
+  setRangeLabel('setNewWarn', 'setNewWarnVal', 'm');
+  setRangeLabel('setNewUrgent', 'setNewUrgentVal', 'm');
+  setRangeLabel('setKitchenWarn', 'setKitchenWarnVal', 'm');
+  setRangeLabel('setKitchenUrgent', 'setKitchenUrgentVal', 'm');
+  setRangeLabel('setVolume', 'setVolumeVal', '%');
+  setRangeLabel('setAlertDismiss', 'setAlertDismissVal', 's');
+  setRangeLabel('setIdleTime', 'setIdleTimeVal', 'm');
+
+  setSegVal('setFontSizeSeg', _cfg.fontSize);
+  setSegVal('setDensitySeg', _cfg.density);
+  setSegVal('setSoundTypeSeg', _cfg.soundType);
+  setSegVal('setDefaultTabSeg', _cfg.defaultTab);
+}
+
+// ── Segmented control helpers ──
+function getSegVal(segId) {
+  const active = document.querySelector(`#${segId} .km-seg-btn.active`);
+  return active ? active.dataset.val : null;
+}
+function setSegVal(segId, val) {
+  const seg = document.getElementById(segId);
+  if (!seg) return;
+  seg.querySelectorAll('.km-seg-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.val === val);
+  });
+}
+function segSelect(segId, btn) {
+  const seg = document.getElementById(segId);
+  if (!seg) return;
+  seg.querySelectorAll('.km-seg-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  applySettings();
+}
+
+// ── Settings panel open/close ──
+function openSettings() {
+  populateSettingsUI();
+  document.getElementById('kmSettingsOverlay').classList.add('open');
+}
+function closeSettings() {
+  document.getElementById('kmSettingsOverlay').classList.remove('open');
+}
+function handleSettingsOverlayClick(e) {
+  if (e.target === document.getElementById('kmSettingsOverlay')) closeSettings();
+}
+
+// ── XSS-safe attribute escaper ──
+function escAttr(v) {
+  return String(v || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+}
+
+// ── Utils ──
+function fmtRp(n) { return 'Rp ' + Number(n||0).toLocaleString('id-ID'); }
+function fmtAgo(ms) {
+  const d = Math.floor((Date.now() - ms) / 1000);
+  if (d < 60)  return d + 's';
+  if (d < 3600) return Math.floor(d/60) + 'm';
+  return Math.floor(d/3600) + 'h';
+}
+function fmtMinSec(ms) {
+  const t = Math.floor((Date.now() - ms) / 1000);
+  const m = Math.floor(t/60), s = t%60;
+  return m + ':' + String(s).padStart(2,'0');
+}
+
+// ── Clock ──
+function startClock() {
+  function tick() {
+    const now = new Date();
+
+    // Sub-bar clock: HH:MM + SS split
+    const hm = now.toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit', hour12:false });
+    const ss = String(now.getSeconds()).padStart(2,'0');
+    const hmEl = document.getElementById('kmClockHM');
+    const secEl = document.getElementById('kmClockSec');
+    if (hmEl)  hmEl.textContent  = hm;
+    if (secEl) secEl.textContent = ss;
+
+    // Legacy clock element (hidden but kept for compat)
+    const el = document.getElementById('kmClock');
+    if (el) el.textContent = hm + ':' + ss;
+
+    // Mobile clock in topbar (now hidden via CSS but update anyway)
+    const cm = document.getElementById('kmClockMobile');
+    if (cm) cm.textContent = hm;
+
+    const de = document.getElementById('kmDate');
+    if (de) de.textContent = now.toLocaleDateString('id-ID', { weekday:'short', day:'numeric', month:'short', year:'numeric' });
+
+    // Idle overlay clock
+    const ic = document.getElementById('kmIdleClock');
+    if (ic) ic.textContent = hm;
+    const id = document.getElementById('kmIdleDate');
+    if (id) id.textContent = now.toLocaleDateString('id-ID', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+  }
+  tick();
+  setInterval(tick, 1000);
+}
+
+// ── Timer refresh (re-render timer chips every 10s) ──
+function startTimerRefresh() {
+  if (_timerInterval) clearInterval(_timerInterval);
+  _timerInterval = setInterval(() => {
+    document.querySelectorAll('.km-timer[data-ts]').forEach(el => {
+      const ts = parseInt(el.dataset.ts);
+      const mins = Math.floor((Date.now() - ts) / 60000);
+      el.textContent = '⏱ ' + fmtMinSec(ts);
+      el.className = 'km-timer ' + timerClass(mins);
+    });
+    document.querySelectorAll('.km-card[data-ts]').forEach(el => {
+      const ts  = parseInt(el.dataset.ts);
+      const mins = Math.floor((Date.now() - ts) / 60000);
+      const st  = el.dataset.status;
+      el.className = 'km-card ' + urgencyClass(mins, st) + (el.dataset.portal === '1' ? ' portal-order' : '');
+    });
+  }, 10000);
+}
+
+function timerClass(mins) {
+  if (mins >= _cfg.newUrgent) return 'urgent';
+  if (mins >= _cfg.newWarn)   return 'warn';
+  return 'ok';
+}
+function urgencyClass(mins, status) {
+  if (status === 'new'     && mins >= _cfg.newUrgent)     return 'urgent';
+  if (status === 'kitchen' && mins >= _cfg.kitchenUrgent) return 'urgent';
+  if (status === 'new'     && mins >= _cfg.newWarn)       return 'warning';
+  if (status === 'kitchen' && mins >= _cfg.kitchenWarn)   return 'warning';
+  return 'normal';
+}
+
+// ── Toast ──
+function kmToast(msg, type='success') {
+  const icons = { success:'✅', info:'ℹ️', error:'❌' };
+  const c = document.getElementById('kmToastContainer');
+  if (!c) return;
+  const t = document.createElement('div');
+  t.className = `km-toast ${type}`;
+  t.innerHTML = `<span>${icons[type]||'ℹ️'}</span><span>${msg}</span>`;
+  c.appendChild(t);
+  setTimeout(() => { t.style.opacity='0'; t.style.transform='translateY(10px)'; t.style.transition='all .3s'; setTimeout(()=>t.remove(),300); }, 3500);
+}
+
+// ── Sound ──
+function _beep(type='new') {
+  if (!_soundOn) return;
+  const vol = (_cfg.volume / 100) * 0.35;
+  const sType = _cfg.soundType;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (type === 'new') {
+      if (sType === 'bell') {
+        [[880,0,0.08],[1108,0.1,0.08],[1318,0.2,0.5],[880,0.22,0.6]].forEach(([f,s,d]) => {
+          const o=ctx.createOscillator(), g=ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.frequency.value=f; o.type='triangle';
+          g.gain.setValueAtTime(0,ctx.currentTime+s);
+          g.gain.linearRampToValueAtTime(vol,ctx.currentTime+s+0.02);
+          g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+s+d);
+          o.start(ctx.currentTime+s); o.stop(ctx.currentTime+s+d+0.01);
+        });
+      } else if (sType === 'blip') {
+        [[1200,0,0.06],[1400,0.08,0.06],[1600,0.16,0.06]].forEach(([f,s,d]) => {
+          const o=ctx.createOscillator(), g=ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.frequency.value=f; o.type='square';
+          g.gain.setValueAtTime(0,ctx.currentTime+s);
+          g.gain.linearRampToValueAtTime(vol*0.6,ctx.currentTime+s+0.01);
+          g.gain.linearRampToValueAtTime(0,ctx.currentTime+s+d);
+          o.start(ctx.currentTime+s); o.stop(ctx.currentTime+s+d+0.01);
+        });
+      } else {
+        // Default beep
+        [[880,0,0.12],[1108,0.14,0.12],[1318,0.28,0.2]].forEach(([f,s,d]) => {
+          const o=ctx.createOscillator(), g=ctx.createGain();
+          o.connect(g); g.connect(ctx.destination);
+          o.frequency.value=f; o.type='sine';
+          g.gain.setValueAtTime(0,ctx.currentTime+s);
+          g.gain.linearRampToValueAtTime(vol,ctx.currentTime+s+0.03);
+          g.gain.linearRampToValueAtTime(0,ctx.currentTime+s+d);
+          o.start(ctx.currentTime+s); o.stop(ctx.currentTime+s+d+0.01);
+        });
+      }
+    } else if (type === 'done') {
+      [[1318,0,0.1],[1046,0.12,0.15]].forEach(([f,s,d]) => {
+        const o=ctx.createOscillator(), g=ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.frequency.value=f; o.type='sine';
+        g.gain.setValueAtTime(0,ctx.currentTime+s);
+        g.gain.linearRampToValueAtTime(vol*0.8,ctx.currentTime+s+0.02);
+        g.gain.linearRampToValueAtTime(0,ctx.currentTime+s+d);
+        o.start(ctx.currentTime+s); o.stop(ctx.currentTime+s+d+0.01);
+      });
+    }
+  } catch(e) {}
+}
+
+function previewSound() {
+  // Short delay so segSelect updates _cfg first
+  setTimeout(() => { _cfg.soundType = getSegVal('setSoundTypeSeg'); _beep('new'); }, 50);
+}
+
+function toggleSound() {
+  _soundOn = !_soundOn;
+  const btn = document.getElementById('kmSoundBtn');
+  if (_soundOn) {
+    btn.innerHTML = '🔔 <span class="km-sound-label">Suara</span>';
+    btn.className = 'km-sound-btn on';
+  } else {
+    btn.innerHTML = '🔕 <span class="km-sound-label">Bisu</span>';
+    btn.className = 'km-sound-btn';
+  }
+  kmToast(_soundOn ? '🔔 Suara notifikasi aktif' : '🔕 Suara dimatikan', 'info');
+}
+
+// ── Fullscreen ──
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen?.();
+  } else {
+    document.exitFullscreen?.();
+  }
+}
+
+// ── Idle Screensaver ──
+function resetIdleTimer() {
+  if (_idleTimer) clearTimeout(_idleTimer);
+  if (!_cfg.idleEnabled) return;
+  const ms = (_cfg.idleTime || 5) * 60 * 1000;
+  _idleTimer = setTimeout(showIdle, ms);
+}
+
+function showIdle() {
+  if (!_cfg.idleEnabled) return;
+  _idleActive = true;
+  // Update stats on idle screen
+  const counts = { new:0, kitchen:0, ready:0 };
+  _orders.forEach(o => { if (counts[o.status] !== undefined) counts[o.status]++; });
+  const idNew = document.getElementById('idleStatNew');
+  const idKit = document.getElementById('idleStatKitchen');
+  const idRdy = document.getElementById('idleStatReady');
+  if (idNew) idNew.textContent = `🔔 ${counts.new} Baru`;
+  if (idKit) idKit.textContent = `👨‍🍳 ${counts.kitchen} Dapur`;
+  if (idRdy) idRdy.textContent = `✅ ${counts.ready} Siap`;
+  document.getElementById('kmIdleOverlay').classList.add('visible');
+}
+
+function dismissIdle() {
+  _idleActive = false;
+  document.getElementById('kmIdleOverlay').classList.remove('visible');
+  resetIdleTimer();
+}
+
+function _resetIdleOnActivity() {
+  if (_idleActive) { dismissIdle(); return; }
+  resetIdleTimer();
+}
+
+// ── Mobile Tab Switcher ──
+let _activeTab = 'new';
+function switchTab(tab) {
+  _activeTab = tab;
+  ['new','kitchen','ready'].forEach(t => {
+    const col = document.getElementById('col-' + t);
+    const btn = document.getElementById('tab-' + t);
+    if (col) col.classList.toggle('km-tab-active', t === tab);
+    if (btn) btn.classList.toggle('active', t === tab);
+  });
+}
+
+function _syncTabCounts() {
+  ['new','kitchen','ready'].forEach(t => {
+    const cnt = _orders.filter(o => o.status === t).length;
+    const el  = document.getElementById('tab-count-' + t);
+    if (!el) return;
+    el.textContent = cnt;
+    el.classList.toggle('has-count', cnt > 0);
+  });
+}
+
+// ── Confirm dialog ──
+function showKmConfirm(icon, title, body, okLabel, okStyle, cb) {
+  document.getElementById('kmConfirmIcon').textContent  = icon;
+  document.getElementById('kmConfirmTitle').textContent = title;
+  document.getElementById('kmConfirmBody').textContent  = body;
+  const okBtn = document.getElementById('kmConfirmOk');
+  okBtn.textContent = okLabel;
+  okBtn.style.background = okStyle || '';
+  _confirmCb = cb;
+  document.getElementById('kmConfirmOverlay').classList.add('open');
+}
+function closeKmConfirm() { document.getElementById('kmConfirmOverlay').classList.remove('open'); _confirmCb = null; }
+function doKmConfirm() { if (_confirmCb) _confirmCb(); closeKmConfirm(); }
+
+// ── Alert banner ──
+function showAlert(order) {
+  const banner = document.getElementById('kmAlertBanner');
+  const id     = 'alert-' + order.id;
+  if (document.getElementById(id)) return;
+
+  const room   = order.room || '—';
+  const guest  = order.guest || 'Tamu';
+  const items  = (order.items||[]).slice(0,2).map(i=>`${i.qty}× ${i.name}`).join(', ');
+  const more   = (order.items||[]).length > 2 ? ` +${order.items.length-2}` : '';
+  const isPortal = order.source === 'guest_portal';
+
+  const el = document.createElement('div');
+  el.id = id;
+  el.className = 'km-alert';
+  el.innerHTML = `
+    <div class="km-alert-ring"></div>
+    <div class="km-alert-body">
+      <div class="km-alert-title">🔔 PESANAN BARU${isPortal ? ' — PORTAL TAMU' : ''} · KAMAR ${room}</div>
+      <div class="km-alert-sub">${guest} · ${items}${more}</div>
+    </div>
+    <button class="km-alert-close" onclick="document.getElementById('${id}').remove()">✕</button>
+  `;
+  banner.appendChild(el);
+  const dismissMs = (_cfg.alertDismiss || 12) * 1000;
+  setTimeout(() => { el.style.transition='all .4s ease'; el.style.opacity='0'; el.style.transform='translateY(-16px)'; setTimeout(()=>el.remove(),400); }, dismissMs);
+}
+
+// ── Render order card ──
+function renderCard(order) {
+  const ts      = order.createdAt || Date.now();
+  const mins    = Math.floor((Date.now() - ts) / 60000);
+  const urgency = urgencyClass(mins, order.status);
+  const isPortal = order.source === 'guest_portal';
+  const total   = (order.items||[]).reduce((s,i)=>s+(i.qty||0)*(i.price||0),0);
+
+  const itemsHtml = (order.items||[]).map(i => `
+    <div class="km-item-row">
+      <span class="km-item-qty">${i.qty}×</span>
+      <span class="km-item-name">${i.name||'—'}</span>
+      <span class="km-item-price">${fmtRp(i.qty*i.price)}</span>
+    </div>`).join('');
+
+  const noteHtml = order.note
+    ? `<div class="km-card-note">📝 ${order.note}</div>` : '';
+
+  let footerHtml = '';
+  if (order.status === 'new') {
+    footerHtml = `
+      <button class="km-action-btn km-btn-kitchen" onclick="updateStatus('${escAttr(order.id)}','kitchen','${escAttr(order._docId||'')}')">
+        👨‍🍳 Mulai Masak
+      </button>
+      <button class="km-action-btn km-btn-cancel" onclick="confirmCancel('${escAttr(order.id)}','${escAttr(order.room)}','${escAttr(order._docId||'')}')">✕</button>
+    `;
+  } else if (order.status === 'kitchen') {
+    footerHtml = `
+      <button class="km-action-btn km-btn-ready" onclick="updateStatus('${escAttr(order.id)}','ready','${escAttr(order._docId||'')}')">
+        🚀 Siap Antar
+      </button>
+      <button class="km-action-btn km-btn-cancel" onclick="confirmCancel('${escAttr(order.id)}','${escAttr(order.room)}','${escAttr(order._docId||'')}')">✕</button>
+    `;
+  } else if (order.status === 'ready') {
+    footerHtml = `
+      <button class="km-action-btn km-btn-done" onclick="confirmDone('${escAttr(order.id)}','${escAttr(order.room)}','${escAttr(order._docId||'')}')">
+        ✅ Selesai Diantar
+      </button>
+    `;
+  }
+
+  const timerCls = timerClass(mins);
+
+  return `
+    <div class="km-card ${urgency}${isPortal?' portal-order':''}" data-id="${order.id}" data-ts="${ts}" data-status="${order.status}" data-portal="${isPortal?1:0}">
+      <div class="km-card-header">
+        <div>
+          <div class="km-card-room">${order.room||'—'}</div>
+          <div class="km-card-room-label">Nomor Kamar</div>
+        </div>
+        <div class="km-card-meta">
+          <div class="km-card-id">#${order.id}</div>
+          <div class="km-card-badges">
+            <span class="km-timer ${timerCls}" data-ts="${ts}">⏱ ${fmtMinSec(ts)}</span>
+            <span class="km-source-badge ${isPortal?'km-source-portal':'km-source-staff'}">${isPortal?'📲 Portal':'🖥 Staff'}</span>
+          </div>
+        </div>
+      </div>
+      <div class="km-card-guest">
+        <span>👤</span>
+        <span>${order.guest||'Tamu'}</span>
+      </div>
+      <div class="km-card-items">${itemsHtml}</div>
+      ${noteHtml}
+      <div class="km-card-total"><span>${(order.items||[]).reduce((s,i)=>s+(i.qty||0),0)} item</span><span>${fmtRp(total)}</span></div>
+      <div class="km-card-footer">${footerHtml}</div>
+    </div>`;
+}
+
+// ── Render all columns ──
+function renderBoard() {
+  const cols = { new:[], kitchen:[], ready:[] };
+  _orders.forEach(o => { if (cols[o.status]) cols[o.status].push(o); });
+  Object.values(cols).forEach(arr => arr.sort((a,b) => (a.createdAt||0) - (b.createdAt||0)));
+
+  ['new','kitchen','ready'].forEach(status => {
+    const list    = document.getElementById('list-' + status);
+    const countEl = document.getElementById('count-' + status);
+    const emptyEl = document.getElementById('empty-' + status);
+    const orders  = cols[status];
+
+    if (countEl) countEl.textContent = orders.length;
+
+    if (!orders.length) {
+      list.innerHTML = '';
+      if (emptyEl) { emptyEl.style.display = 'flex'; list.appendChild(emptyEl); }
+      return;
+    }
+    if (emptyEl) emptyEl.style.display = 'none';
+    list.innerHTML = orders.map(o => renderCard(o)).join('');
+  });
+
+  _syncTabCounts();
+
+  const total      = _orders.length;
+  const totalItems = _orders.reduce((s,o)=>s+(o.items||[]).reduce((ss,i)=>ss+(i.qty||0),0),0);
+  const portalCount = _orders.filter(o=>o.source==='guest_portal').length;
+  const statOrders = document.getElementById('statTotalOrders');
+  const statItems  = document.getElementById('statTotalItems');
+  const statPortal = document.getElementById('statPortalCount');
+  if (statOrders) statOrders.textContent = `📋 ${total} order`;
+  if (statItems)  statItems.textContent  = `🍽 ${totalItems} item`;
+  if (statPortal) statPortal.textContent = `📲 ${portalCount} portal`;
+}
+
+// ── Update order status via Firestore ──
+function updateStatus(orderId, newStatus, docId) {
+  if (!window._fbDb || !window._FB) { kmToast('⚠️ Firebase tidak terhubung', 'error'); return; }
+
+  const o = _orders.find(x => x.id === orderId);
+  if (o) { o.status = newStatus; renderBoard(); }
+
+  const doUpdate = (ref) => {
+    window._FB.updateDoc(ref, {
+      status: newStatus,
+      updatedAt: window._FB.serverTimestamp()
+    }).then(() => {
+      const labels = { kitchen:'Dikirim ke dapur', ready:'Siap diantar', done:'Selesai', cancelled:'Dibatalkan' };
+      kmToast(`✅ Kamar ${o?.room||'—'} — ${labels[newStatus]||newStatus}`, 'success');
+      if (newStatus === 'done' || newStatus === 'ready') _beep('done');
+    }).catch(e => { kmToast('❌ Gagal update: ' + e.message, 'error'); });
+  };
+
+  if (docId) {
+    doUpdate(window._FB.doc(window._fbDb, 'orders', docId));
+  } else {
+    const q = window._FB.query(
+      window._FB.collection(window._fbDb, 'orders'),
+      window._FB.where('id', '==', orderId)
+    );
+    window._FB.getDocs(q).then(snap => { snap.docs.forEach(d => doUpdate(d.ref)); })
+      .catch(e => kmToast('❌ Query error: ' + e.message, 'error'));
+  }
+}
+
+function confirmCancel(orderId, room, docId) {
+  showKmConfirm('❌', 'Batalkan Pesanan?',
+    `Pesanan dari Kamar ${room} akan dibatalkan. Tamu akan mendapat notifikasi status "cancelled".`,
+    'Ya, Batalkan', 'var(--urgent-col)',
+    () => updateStatus(orderId, 'cancelled', docId)
+  );
+}
+function confirmDone(orderId, room, docId) {
+  showKmConfirm('✅', 'Konfirmasi Selesai?',
+    `Pesanan Kamar ${room} sudah diantar dan diterima tamu?`,
+    'Ya, Selesai', 'var(--ready-col)',
+    () => updateStatus(orderId, 'done', docId)
+  );
+}
+
+// ── Firebase Init ──
+window._kmInit = async function() {
+  if (!window._fbDb || !window._FB) return;
+
+  const badge = document.getElementById('kmConnBadge');
+  const text  = document.getElementById('kmConnText');
+  if (badge) { badge.className = 'km-conn-badge connected'; }
+  if (text)  text.textContent = 'Live';
+
+  try {
+    const snap = await window._FB.getDocs(window._FB.collection(window._fbDb, 'settings'));
+    snap.forEach(d => {
+      if (d.id === 'restaurant' && d.data().name) {
+        _propName = d.data().name;
+        const pn = document.getElementById('kmPropName');
+        if (pn) pn.textContent = _propName + ' · Kitchen';
+        document.title = 'Kitchen Monitor — ' + _propName;
+      }
+    });
+  } catch(e) { console.warn('settings load:', e); }
+
+  setTimeout(() => {
+    document.getElementById('kmLoader').style.display = 'none';
+    document.getElementById('kmApp').style.display   = 'grid';
+
+    // Apply saved settings after app shows
+    applySettings();
+
+    // Auto fullscreen
+    if (_cfg.autoFullscreen) {
+      setTimeout(() => document.documentElement.requestFullscreen?.(), 300);
+    }
+
+    // Default tab on mobile
+    if (window.innerWidth <= 760 && _cfg.defaultTab) {
+      switchTab(_cfg.defaultTab);
+    }
+  }, 600);
+
+  kmToast('🔥 Terhubung ke Firebase — LIVE', 'success');
+  _startOrderListener();
+};
+
+let _unsubOrders    = null;
+let _reconnectTimer = null;
+let _reconnectDelay = 3000;
+
+// ── Exposed reconnect so online-event can trigger it ──
+window._kmReconnect = function() {
+  clearTimeout(_reconnectTimer);
+  _startOrderListener();
+};
+
+// FIX 7: Reconnecting fullscreen banner helper
+function _kmShowReconnectBanner(show) {
+  let el = document.getElementById('kmReconnectBanner');
+  if (show) {
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'kmReconnectBanner';
+      el.style.cssText = [
+        'position:fixed;inset:0;z-index:9998;',
+        'background:rgba(10,10,25,0.88);',
+        'display:flex;align-items:center;justify-content:center;',
+        'backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);',
+        'flex-direction:column;gap:16px;'
+      ].join('');
+      el.innerHTML = `
+        <div style="width:48px;height:48px;border:4px solid rgba(255,160,0,0.25);
+                    border-top-color:#ffa000;border-radius:50%;
+                    animation:kmSpin .9s linear infinite;"></div>
+        <div style="color:#ffa000;font-weight:800;font-size:18px;letter-spacing:.5px;">Menyambung ulang…</div>
+        <div style="color:rgba(255,255,255,0.5);font-size:13px;">Menunggu koneksi Firebase</div>
+        <button onclick="_kmReconnect()"
+          style="margin-top:8px;background:#ffa000;color:#000;border:none;
+                 border-radius:12px;padding:10px 24px;font-weight:700;font-size:14px;cursor:pointer;">
+          Coba Sekarang
+        </button>`;
+      if (!document.getElementById('km-spin-style')) {
+        const s = document.createElement('style');
+        s.id = 'km-spin-style';
+        s.textContent = '@keyframes kmSpin{to{transform:rotate(360deg)}}';
+        document.head.appendChild(s);
+      }
+      document.body.appendChild(el);
+    }
+    el.style.display = 'flex';
+  } else {
+    if (el) el.style.display = 'none';
+  }
+}
+
+function _startOrderListener() {
+  if (_unsubOrders) { _unsubOrders(); _unsubOrders = null; }
+  clearTimeout(_reconnectTimer);
+
+  if (!window._fbDb || !window._FB) {
+    _reconnectTimer = setTimeout(_startOrderListener, _reconnectDelay);
+    return;
+  }
+
+  // Show connecting badge while (re)subscribing
+  const badge = document.getElementById('kmConnBadge');
+  const text  = document.getElementById('kmConnText');
+
+  const q = window._FB.query(
+    window._FB.collection(window._fbDb, 'orders'),
+    window._FB.where('status', 'in', ['new', 'kitchen', 'ready']),
+    window._FB.orderBy('createdAt', 'desc')
+  );
+
+  _unsubOrders = window._FB.onSnapshot(q, snap => {
+    // ✅ Connected — reset backoff + dismiss reconnect banner
+    _reconnectDelay = 3000;
+    _kmShowReconnectBanner(false);   // FIX 7: hide banner on reconnect
+    if (badge) badge.className = 'km-conn-badge connected';
+    if (text)  text.textContent = 'Live';
+
+    const incoming = [];
+    const newOnes  = [];
+
+    snap.docs.forEach(d => {
+      const o = d.data();
+      if (!o.room || !o.id) return;
+      const order = {
+        id:        o.id,
+        _docId:    d.id,
+        room:      String(o.room),
+        guest:     o.guest || 'Tamu',
+        items:     o.items || [],
+        status:    o.status || 'new',
+        note:      o.note  || '',
+        source:    o.source || '',
+        createdAt: o.createdAt?.toMillis?.() ?? (typeof o.createdAt === 'number' ? o.createdAt : Date.now()),
+        payment:   o.payment || '',
+      };
+      incoming.push(order);
+      if (!_knownIds.has(d.id)) newOnes.push(order);
+      _knownIds.add(d.id);
+    });
+
+    if (_initialLoadDone && newOnes.length > 0) {
+      newOnes.forEach(o => { showAlert(o); _beep('new'); });
+      const sub = document.getElementById('kmBrandSub');
+      if (sub) {
+        sub.textContent = `${newOnes.length} ORDER BARU · ${new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'})}`;
+        setTimeout(() => {
+          if (sub) {
+            const stationLabel = _cfg.stationName ? _cfg.stationName.toUpperCase() + ' · LIVE' : 'DAPUR · LIVE';
+            sub.textContent = stationLabel;
+          }
+        }, 8000);
+      }
+      if (_idleActive) dismissIdle();
+    }
+    _initialLoadDone = true;
+    _orders = incoming;
+    renderBoard();
+
+  }, err => {
+    console.warn('orders snapshot error:', err.code, err.message);
+    if (badge) badge.className = 'km-conn-badge connecting';
+    if (text)  text.textContent = 'Reconnecting';
+
+    // FIX 7: Show fullscreen reconnecting banner
+    _kmShowReconnectBanner(true);
+
+    // Exponential backoff: 3s → 6s → 12s → max 30s
+    _reconnectDelay = Math.min(_reconnectDelay * 2, 30000);
+    _reconnectTimer = setTimeout(() => {
+      if (window._fbReady) _startOrderListener();
+    }, _reconnectDelay);
+  });
+}
+
+// ── Boot ──
+document.addEventListener('DOMContentLoaded', () => {
+  // Load settings first
+  loadSettings();
+  // Apply theme immediately to prevent flash
+  document.documentElement.setAttribute('data-theme', _cfg.darkMode ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-fontsize', _cfg.fontSize);
+  document.documentElement.setAttribute('data-density', _cfg.density);
+  document.documentElement.setAttribute('data-hideprice', _cfg.hidePrice ? 'true' : 'false');
+  document.documentElement.setAttribute('data-kiosk', _cfg.kioskMode ? 'true' : 'false');
+
+  startClock();
+  startTimerRefresh();
+
+  // Activity listeners for idle
+  ['click','touchstart','keydown','mousemove'].forEach(ev => {
+    document.addEventListener(ev, _resetIdleOnActivity, { passive: true });
+  });
+  resetIdleTimer();
+
+  if (window._fbReady) window._kmInit();
+
+  // ── Heartbeat: every 30s, if badge shows Reconnecting → force retry ──
+  setInterval(() => {
+    const text = document.getElementById('kmConnText');
+    if (text && text.textContent === 'Reconnecting' && window._fbReady) {
+      if (window._fbEnableNetwork) window._fbEnableNetwork().catch(()=>{});
+      _startOrderListener();
+    }
+  }, 30000);
+
+  setTimeout(() => {
+    const el = document.getElementById('kmLoaderSub');
+    if (el && !window._fbReady) el.textContent = 'Autentikasi anonim...';
+  }, 1200);
+  setTimeout(() => {
+    const el = document.getElementById('kmLoaderSub');
+    if (el && !window._fbReady) el.textContent = 'Memuat data pesanan...';
+  }, 2400);
+});
+</script>
+</body>
+</html>
